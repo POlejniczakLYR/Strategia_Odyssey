@@ -20,8 +20,10 @@ liczyło się dwa razy.
 PKD 84–88 i 90–93), Public jako jeden blok, „firma u nas” = NIP płatnika
 z dodatnią sprzedażą netto w ostatnich 12 zamkniętych miesiącach. BvD (Orbis)
 nie używamy. Klienci samodzielni (sami w swojej grupie TOP_LEVEL) bez
-zatrudnienia: przyjmujemy, że są poprawnie przypisani do obecnego segmentu,
-więc piętro = segment.
+zatrudnienia: piętro wynika z obecnego segmentu. Po D25 (segment zgadza się
+z piętrem w 63–79%, ±1 piętro w 90–100%) rozkładamy ich na piętra w takich
+proporcjach jak znanych klientów z tego segmentu (tryb `ROZKLAD` w `sql/03`;
+wersja „segment = piętro” to tryb `SEGMENT`).
 
 Piętra pokrywają się z segmentami firmy (`WORK_POLAND.MATRYCA_ZATRUDNIENIA`):
 0–40 = IS, 41–200 = PF, 201–500 = MM, 501–4000 = K&N, 4001+ = STRATEGIC.
@@ -221,9 +223,20 @@ Wnioski:
 
     | Rodzaj | NIP-y / % sprzedaży (D23) | Piętro |
     |---|---|---|
-    | Sam w grupie | 10 615 / 10,5% | z segmentu obecnego: IS → 0–40, PF → 41–200, MM → 201–500, CORPORATE Strategic → 4001+, pozostałe CORPORATE → 501–4000, SMB bez segmentu → 0–40 (`SZACUNEK_SEGMENT`) |
+    | Sam w grupie | 10 615 / 10,5% | z segmentu obecnego, w proporcjach znanych klientów z tego segmentu; najwięksi według sprzedaży na najwyższe piętra (`SZACUNEK_SEG_ROZKLAD`) |
     | Grupa jednorodna (≥ 70% znanych na 1 piętrze) | 346 / 0,6% | najczęstsze piętro w grupie (`SZACUNEK_GRUPA_TOP_LEVEL`) |
-    | Inna grupa (różnorodna, bez danych, 1 znany) | 2 195 / 4,4% | 200 największych → `DO_UZUPELNIENIA` (lista B, eKRS); reszta z segmentu (`SZACUNEK_SEGMENT_W_GRUPIE`) |
+    | Inna grupa (różnorodna, bez danych, 1 znany) | 2 195 / 4,4% | 200 największych → `DO_UZUPELNIENIA` (lista B, eKRS); reszta jak „sam w grupie”, ale z rozkładem znanych klientów w grupach (`SZACUNEK_GRUPA_ROZKLAD`) |
+
+    Tryb `SEGMENT` (piętro = segment: IS i SMB bez segmentu → 0–40, PF → 41–200,
+    MM → 201–500, CORPORATE Strategic → 4001+, pozostałe CORPORATE → 501–4000)
+    jest używany przy mniej niż 20 znanych klientach w segmencie albo po
+    przełączeniu parametru `TRYB_SZACUNKU`.
+
+    **D25: zgodność segmentu z piętrem** (klienci ze znanym zatrudnieniem):
+    samodzielni PF 63% (35% jest na 0–40), MM 70%, SMB bez segmentu 79% na 0–40,
+    K&N 72%, International 35%. Spółki w grupach: segment opisuje grupę, nie
+    spółkę (Strategic 7%, K&N 22%, International 26%). W `T_KOD_POCZTOWY_OPIEKUN`
+    nie ma segmentu IS, więc IS bierzemy z nazwy regionu sprzedaży.
 
     Zatrudnienie szacunkowe (do sumy pracujących w `06`) = mediana zatrudnienia
     naszych klientów ze znanym zatrudnieniem na tym samym piętrze. Nie wchodzi

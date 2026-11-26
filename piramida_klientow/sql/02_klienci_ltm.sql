@@ -12,7 +12,8 @@ SET DEFINE OFF;
 -- bez zatrudnienia w 03 (decyzja 2026-11-26):
 --   CORPORATE -> region: STRATEGIC / K&N / INTERNATIONAL / CA_PUBLIC / CA_INNE
 --   SMB       -> segment terytorium opiekuna (T_KOD_POCZTOWY_OPIEKUN po
---                AREA_CODE): IS / PF / MM; brak -> SMB_INNE
+--                AREA_CODE): PF / MM; region "IS ..." -> IS (w tabeli terytoriow
+--                nie ma IS - diagnostyka D25); reszta -> SMB_INNE
 --   TOP_LEVEL = COALESCE(NATIONAL_LEADER_NUMBER, SOLDTO_NUMBER)
 --
 -- Mapowanie NIP-ow (T_ODY_MAPA_NIP, lista C w 04):
@@ -172,6 +173,8 @@ SELECT n.NIP,
                     WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%PUBLI%'                   THEN 'CA_PUBLIC'
                     ELSE                                                                     'CA_INNE' END
            WHEN ars.SEGMENT IN ('IS', 'PF', 'MM')       THEN ars.SEGMENT
+           WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE 'IS %'
+             OR UPPER(sfr.SALES_FORCE_REGION) = 'IS'    THEN 'IS'          -- inside sales (region, nie terytorium)
            ELSE                                              'SMB_INNE'
        END                                                              AS SEGMENT_OBECNY,
        COALESCE(ts.NATIONAL_LEADER_NUMBER, ts.SOLDTO_NUMBER)            AS TOP_LEVEL

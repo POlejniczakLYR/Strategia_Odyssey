@@ -26,19 +26,25 @@ SET DEFINE OFF;
 --  1-5                  wg zatrudnienia i T_ODY_PIRAMIDA_PROGI (ZATRUDNIENIE)
 --  klienci BEZ zatrudnienia (decyzje 2026-11-26, diagnostyka D19-D23), wg grupy
 --  TOP_LEVEL (lider grupy zakupowej) wsrod naszych klientow:
---    SAM (jedyny NIP w grupie) -> pietro wg SEGMENTU OBECNEGO (zakladamy, ze
---        segment jest przypisany poprawnie): IS -> 0-40, PF -> 41-200,
---        MM -> 201-500, CORPORATE Strategic -> 4001+, pozostale CORPORATE
---        (K&N, International, Public, Other CA) -> 501-4000, SMB bez
---        segmentu -> 0-40                                   (SZACUNEK_SEGMENT)
---        Progi segmentow = WORK_POLAND.MATRYCA_ZATRUDNIENIA (IS 1-40, PF 41-200,
---        MM 201-500, K&N 501-4000, STRATEGIC 4001+) - te same co pietra.
 --    GRUPA JEDNORODNA (>= 2 znanych NIP-ow, >= 70% na jednym pietrze)
 --        -> najczestsze pietro w grupie                 (SZACUNEK_GRUPA_TOP_LEVEL)
---    INNA GRUPA (roznorodna / bez danych / 1 znany):
---        TOP_N wg sprzedazy -> 99 DO_UZUPELNIENIA (lista B w 04, eKRS)
---        reszta -> pietro wg segmentu obecnego          (SZACUNEK_SEGMENT_W_GRUPIE)
---    TOP_N_RECZNIE = 200 (CTE par)
+--    INNA GRUPA, TOP_N wg sprzedazy -> 99 DO_UZUPELNIENIA (lista B w 04, eKRS)
+--    SAM (jedyny NIP w grupie) i reszta INNEJ GRUPY -> pietro z SEGMENTU OBECNEGO:
+--      TRYB_SZACUNKU = 'ROZKLAD' (domyslnie, diagnostyka D25):
+--        nieprzypisanych z danego segmentu rozkladamy na pietra w takich
+--        proporcjach, jak znanych klientow z tego samego segmentu (osobno
+--        samodzielni i w grupach); kolejnosc wg sprzedazy - najwieksi na
+--        najwyzsze pietra. Np. PF samodzielni: 63% 41-200, 35% 0-40, 2% 201-500.
+--        Spojne z rynkiem, ktory dzielimy wg DB_BAZA. Segment z < MIN_PROBA
+--        znanych klientow -> jak w trybie SEGMENT.
+--                     (SZACUNEK_SEG_ROZKLAD / SZACUNEK_GRUPA_ROZKLAD)
+--      TRYB_SZACUNKU = 'SEGMENT': pietro = segment: IS i SMB bez segmentu -> 0-40,
+--        PF -> 41-200, MM -> 201-500, CORPORATE Strategic -> 4001+, pozostale
+--        CORPORATE (K&N, International, Public, Other CA) -> 501-4000
+--                     (SZACUNEK_SEGMENT / SZACUNEK_GRUPA_SEGMENT)
+--      Progi segmentow = WORK_POLAND.MATRYCA_ZATRUDNIENIA (IS 1-40, PF 41-200,
+--      MM 201-500, K&N 501-4000, STRATEGIC 4001+) - te same co pietra.
+--    Parametry w CTE par: TOP_N_RECZNIE = 200, TRYB_SZACUNKU, MIN_PROBA = 20
 --  ZATRUDNIENIE_SZAC: dla szacunkow - mediana zatrudnienia naszych klientow
 --  ze znanym zatrudnieniem na tym samym pietrze (do sumy pracujacych w 06);
 --  nie wchodzi do proporcji w 05.
@@ -83,9 +89,9 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_FIRMA_PROFIL',
 -- ZRODLO_ZATR   : DB_BAZA / KOREKTA
 -- SEKTOR        : PUBLICZNY / PRYWATNY / NIEZNANY
 -- STATUS_REJESTR: AKTYWNA / ZAWIESZONA / ZAKONCZONA / BRAK (NIP-u nie ma w T_CEIDG_GUS)
--- PIETRO_ZRODLO : ZATRUDNIENIE / PUBLIC / ZAGRANICZNY / SZACUNEK_SEGMENT /
---                 SZACUNEK_GRUPA_TOP_LEVEL / SZACUNEK_SEGMENT_W_GRUPIE /
---                 DO_UZUPELNIENIA / BRAK_ZATRUDNIENIA
+-- PIETRO_ZRODLO : ZATRUDNIENIE / PUBLIC / ZAGRANICZNY / SZACUNEK_SEG_ROZKLAD /
+--                 SZACUNEK_SEGMENT / SZACUNEK_GRUPA_ROZKLAD / SZACUNEK_GRUPA_SEGMENT /
+--                 SZACUNEK_GRUPA_TOP_LEVEL / DO_UZUPELNIENIA / BRAK_ZATRUDNIENIA
 -- TYP_PODMIOTU  : z T_CEIDG_GUS (P / F / LP ...); TYP_NIP: z T_ODY_KLIENT_LTM
 
 
@@ -99,8 +105,11 @@ INSERT INTO WORK_POLAND.T_ODY_FIRMA_PROFIL
      DZIAL_PKD, ZRODLO_PKD, FORMA_WLASNOSCI, SEKTOR, ZRODLO_SEKTORA, FLAGA_PUBLIC,
      STATUS_REJESTR, KLASA_GUS, PIETRO_NR, PIETRO, PIETRO_ZRODLO, TYP_PODMIOTU, TYP_NIP,
      SEGMENT_OBECNY, TOP_LEVEL, ZATRUDNIENIE_SZAC, CZY_KLIENT)
-WITH par AS (                                   -- parametr: ilu najwiekszych klientow z grup
-    SELECT 200 AS TOP_N_RECZNIE FROM dual       -- bez jednoznacznego pietra uzupelniamy recznie
+WITH par AS (                                   -- PARAMETRY
+    SELECT 200       AS TOP_N_RECZNIE,          -- ilu najwiekszych z grup bez jednoznacznego pietra - recznie
+           'ROZKLAD' AS TRYB_SZACUNKU,          -- 'ROZKLAD' albo 'SEGMENT' (opis w naglowku)
+           20        AS MIN_PROBA               -- min. liczba znanych klientow w segmencie do rozkladu
+    FROM   dual
 ),
 db AS (                                    -- DB_BAZA: 1 wiersz na NIP (D05);
     -- KEEP zostaje na wypadek dubli: bierzemy wiersz z wypelnionym zatrudnieniem
@@ -272,8 +281,9 @@ moda AS (                                       -- najczestsze pietro w grupie (
                   GROUP  BY TOP_LEVEL, PIETRO_ZATR))
     WHERE  RN = 1
 ),
-rodzaj AS (                                     -- klienci bez zatrudnienia: SAM / JEDNORODNA / INNA_GRUPA
+rodzaj AS (                                     -- rodzaj grupy i rodzaj braku zatrudnienia
     SELECT z.*,
+           CASE WHEN NVL(g.NIP_W_GRUPIE, 1) = 1 THEN 'SAM' ELSE 'GRUPA' END AS RODZAJ_GRUPY,
            CASE WHEN z.KLIENT_PL = 1 AND z.ZATRUDNIENIE IS NULL THEN
                 CASE WHEN NVL(g.NIP_W_GRUPIE, 1) = 1                    THEN 'SAM'
                      WHEN g.NIP_Z_ZATR >= 2 AND m.UDZIAL_MODY >= 0.7    THEN 'JEDNORODNA'
@@ -293,6 +303,48 @@ ranking AS (                                    -- INNA_GRUPA: ranking wg sprzed
            END                                                       AS RN_INNA_GRUPA
     FROM   rodzaj r
 ),
+do_kalibracji AS (                              -- komu pietro dajemy z segmentu
+    SELECT r.*,
+           CASE WHEN r.RODZAJ_BRAKU = 'SAM'
+                  OR (r.RODZAJ_BRAKU = 'INNA_GRUPA'
+                      AND r.RN_INNA_GRUPA > (SELECT TOP_N_RECZNIE FROM par))
+                THEN 1 ELSE 0 END                                    AS KALIBRUJ
+    FROM   ranking r
+),
+pozycja AS (                                    -- pozycja w segmencie wg sprzedazy: 0 = najwieksza, 1 = najmniejsza
+    SELECT d.*,
+           CASE WHEN d.KALIBRUJ = 1 THEN
+                (ROW_NUMBER() OVER (PARTITION BY d.KALIBRUJ, d.RODZAJ_GRUPY, d.SEGMENT_OBECNY
+                                    ORDER BY d.SALES_LTM DESC NULLS LAST, d.NIP) - 0.5)
+                / COUNT(*) OVER (PARTITION BY d.KALIBRUJ, d.RODZAJ_GRUPY, d.SEGMENT_OBECNY)
+           END                                                       AS POZYCJA
+    FROM   do_kalibracji d
+),
+rozklad AS (                                    -- rozklad pieter ZNANYCH klientow w (rodzaj grupy, segment),
+    SELECT RODZAJ_GRUPY, SEGMENT_OBECNY, PIETRO_ZATR, N_SEG,     -- skumulowany od najwyzszego pietra
+           (SUM(CNT) OVER (PARTITION BY RODZAJ_GRUPY, SEGMENT_OBECNY ORDER BY PIETRO_ZATR DESC
+                           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) - CNT) / N_SEG AS UDZIAL_OD,
+           SUM(CNT) OVER (PARTITION BY RODZAJ_GRUPY, SEGMENT_OBECNY ORDER BY PIETRO_ZATR DESC
+                          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) / N_SEG       AS UDZIAL_DO
+    FROM  (SELECT RODZAJ_GRUPY, SEGMENT_OBECNY, PIETRO_ZATR,
+                  COUNT(*)                                                      AS CNT,
+                  SUM(COUNT(*)) OVER (PARTITION BY RODZAJ_GRUPY, SEGMENT_OBECNY) AS N_SEG
+           FROM   rodzaj
+           WHERE  KLIENT_PL = 1
+             AND  PIETRO_ZATR IS NOT NULL
+           GROUP  BY RODZAJ_GRUPY, SEGMENT_OBECNY, PIETRO_ZATR)
+),
+kalib AS (
+    SELECT p.*, rz.PIETRO_ZATR AS PIETRO_ROZKLAD
+    FROM   pozycja p
+    LEFT JOIN rozklad rz
+           ON  rz.RODZAJ_GRUPY   = p.RODZAJ_GRUPY
+           AND rz.SEGMENT_OBECNY = p.SEGMENT_OBECNY
+           AND p.POZYCJA >  rz.UDZIAL_OD
+           AND p.POZYCJA <= rz.UDZIAL_DO
+           AND rz.N_SEG  >= (SELECT MIN_PROBA FROM par)
+           AND (SELECT TRYB_SZACUNKU FROM par) = 'ROZKLAD'
+),
 pietro AS (
     SELECT r.*,
            CASE
@@ -308,22 +360,25 @@ pietro AS (
                WHEN r.FLAGA_PUBLIC = 'T'                                     THEN 6
                WHEN r.PIETRO_ZATR IS NOT NULL                                THEN r.PIETRO_ZATR
                WHEN r.CZY_KLIENT = 'N'                                       THEN 99
-               WHEN r.RODZAJ_BRAKU = 'SAM'                                   THEN r.PIETRO_SEGMENT
                WHEN r.RODZAJ_BRAKU = 'JEDNORODNA'                            THEN r.PIETRO_MODA
-               WHEN r.RN_INNA_GRUPA <= (SELECT TOP_N_RECZNIE FROM par)       THEN 99
-               ELSE                                                               r.PIETRO_SEGMENT
+               WHEN r.KALIBRUJ = 1                                           THEN NVL(r.PIETRO_ROZKLAD, r.PIETRO_SEGMENT)
+               ELSE                                                               99
            END                                                       AS PIETRO_NR,
            CASE
                WHEN NVL(r.TYP_NIP, 'NIP') IN ('ZAGRANICZNY', 'NIE_10_CYFR') THEN 'ZAGRANICZNY'
                WHEN r.FLAGA_PUBLIC = 'T'                                     THEN 'PUBLIC'
                WHEN r.PIETRO_ZATR IS NOT NULL                                THEN 'ZATRUDNIENIE'
                WHEN r.CZY_KLIENT = 'N'                                       THEN 'BRAK_ZATRUDNIENIA'
-               WHEN r.RODZAJ_BRAKU = 'SAM'                                   THEN 'SZACUNEK_SEGMENT'
                WHEN r.RODZAJ_BRAKU = 'JEDNORODNA'                            THEN 'SZACUNEK_GRUPA_TOP_LEVEL'
-               WHEN r.RN_INNA_GRUPA <= (SELECT TOP_N_RECZNIE FROM par)       THEN 'DO_UZUPELNIENIA'
-               ELSE                                                               'SZACUNEK_SEGMENT_W_GRUPIE'
+               WHEN r.KALIBRUJ = 1 AND r.RODZAJ_GRUPY = 'SAM'
+                    THEN CASE WHEN r.PIETRO_ROZKLAD IS NOT NULL THEN 'SZACUNEK_SEG_ROZKLAD'
+                              ELSE 'SZACUNEK_SEGMENT' END
+               WHEN r.KALIBRUJ = 1
+                    THEN CASE WHEN r.PIETRO_ROZKLAD IS NOT NULL THEN 'SZACUNEK_GRUPA_ROZKLAD'
+                              ELSE 'SZACUNEK_GRUPA_SEGMENT' END
+               ELSE                                                               'DO_UZUPELNIENIA'
            END                                                       AS PIETRO_ZRODLO
-    FROM   ranking r
+    FROM   kalib r
 ),
 med AS (                                        -- mediana zatrudnienia naszych klientow na pietrze
     SELECT PIETRO_NR, MEDIAN(ZATRUDNIENIE) AS MEDIANA_ZATR
