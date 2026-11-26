@@ -1547,3 +1547,74 @@ FROM   m
 CROSS JOIN tot t
 GROUP  BY m.KLASA, m.MIARA
 ORDER  BY m.KLASA, m.MIARA;
+
+
+-- =====================================================================
+-- K. NIP-y z T_CEIDG_GUS a kartoteka SAP (2026-11-26)
+-- T_CEIDG_GUS ma ok. 526 tys. NIP-ow, portfolio SAP ok. 302 tys. (z Kwarantanna).
+-- Ktore NIP-y z T_CEIDG_GUS sa w SAP, a ktore nie (kandydaci na
+-- "niezarejestrowanych")? Podzial wg statusu w rejestrze i klasy GUS.
+--   1 PORTFOLIO          - nieusuniety SOLDTO poza Kwarantanna
+--   2 KWARANTANNA        - nieusuniety SOLDTO tylko w regionach Quarantine
+--   3 W SAP, BEZ KONTA   - platnik jest w T_PAYER, ale wszystkie SOLDTO usuniete
+--                          (byly klient) albo brak SOLDTO
+--   4 BRAK W SAP         - NIP-u nie ma w T_PAYER
+-- =====================================================================
+
+-- === D27 T_CEIDG_GUS wg obecnosci w SAP x status rejestru x klasa GUS
+WITH sap AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
+           MAX(CASE
+                   WHEN ts.SOLDTO_NUMBER IS NOT NULL
+                    AND NVL(ts.DL_DELETION_FLAG, 'N') <> 'Y'
+                    AND NVL(UPPER(sfr.SALES_FORCE_REGION), '-') NOT LIKE '%QUARANT%' THEN 3
+                   WHEN ts.SOLDTO_NUMBER IS NOT NULL
+                    AND NVL(ts.DL_DELETION_FLAG, 'N') <> 'Y'                         THEN 2
+                   ELSE                                                                   1
+               END)                                                         AS POZIOM
+    FROM   POLAND.T_PAYER tp
+    LEFT JOIN POLAND.T_SOLDTO ts
+           ON  ts.PAYER_NUMBER = tp.PAYER_NUMBER
+           AND ts.COUNTRY_CODE = tp.COUNTRY_CODE
+    LEFT JOIN SHARED.T_SALES_FORCE_REGION sfr
+           ON  sfr.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+           AND sfr.COUNTRY_CODE            = 'PL'
+           AND sfr.LANGUAGE_CODE           = 'POLISH'
+    WHERE  tp.COUNTRY_CODE = 'PL'
+      AND  LENGTH(REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')) = 10
+    GROUP  BY REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')
+),
+db AS (
+    SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
+           MAX(d.ZATRUDNIENIE)                                              AS ZATR
+    FROM   WORK_POLAND.DB_BAZA d
+    WHERE  d.ZATRUDNIENIE IS NOT NULL
+    GROUP  BY REGEXP_REPLACE(d.NIP, '[^0-9]', '')
+),
+f AS (
+    SELECT CASE s.POZIOM WHEN 3 THEN '1 PORTFOLIO' WHEN 2 THEN '2 KWARANTANNA'
+                         WHEN 1 THEN '3 W SAP, BEZ KONTA' ELSE '4 BRAK W SAP' END AS SAP,
+           CASE WHEN NVL(cg.DELETION_FLAG, 'N') = 'Y' OR cg.DATA_SKRESLENIA IS NOT NULL
+                  OR cg.DATA_ZAKONCZENIA IS NOT NULL                          THEN '3 ZAKONCZONA'
+                WHEN cg.DATA_ZAWIESZENIA IS NOT NULL
+                 AND (cg.DATA_WZNAWIENIA IS NULL OR cg.DATA_WZNAWIENIA < cg.DATA_ZAWIESZENIA)
+                                                                              THEN '2 ZAWIESZONA'
+                ELSE                                                               '1 AKTYWNA' END AS STATUS,
+           db.ZATR,
+           cg.TYP_PODMIOTU
+    FROM   WORK_POLAND.T_CEIDG_GUS cg
+    LEFT JOIN sap s ON s.NIP = cg.NIP
+    LEFT JOIN db    ON db.NIP = cg.NIP
+)
+SELECT SAP, STATUS,
+       COUNT(*)                                                         AS NIP_CEIDG,
+       SUM(CASE WHEN TYP_PODMIOTU = 'F' THEN 1 ELSE 0 END)              AS W_TYM_OS_FIZ,
+       SUM(CASE WHEN ZATR < 10 THEN 1 ELSE 0 END)                       AS KL_0_9,
+       SUM(CASE WHEN ZATR >= 10  AND ZATR < 50   THEN 1 ELSE 0 END)     AS KL_10_49,
+       SUM(CASE WHEN ZATR >= 50  AND ZATR < 250  THEN 1 ELSE 0 END)     AS KL_50_249,
+       SUM(CASE WHEN ZATR >= 250 AND ZATR < 1000 THEN 1 ELSE 0 END)     AS KL_250_999,
+       SUM(CASE WHEN ZATR >= 1000 THEN 1 ELSE 0 END)                    AS KL_1000,
+       SUM(CASE WHEN ZATR IS NULL THEN 1 ELSE 0 END)                    AS BRAK_KLASY
+FROM   f
+GROUP  BY SAP, STATUS
+ORDER  BY SAP, STATUS;
