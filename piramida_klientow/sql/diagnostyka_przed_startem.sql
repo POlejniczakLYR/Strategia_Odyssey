@@ -660,3 +660,76 @@ SELECT NVL(DB_BAZA, '(brak)')                                           AS ZRZUT
 FROM   WORK_POLAND.DB_BAZA
 GROUP  BY NVL(DB_BAZA, '(brak)'), NVL(REGEXP_SUBSTR(DATA_BADANIA, '[0-9]{4}'), '(brak)')
 ORDER  BY ZRZUT, ROK_BADANIA DESC;
+
+
+-- === D18 NASI klienci z sektora publicznego wg dzialu PKD: w wariancie B i POZA nim
+-- Po D16: w katalogu sa publiczne podmioty spoza dzialow 84-88 / 90-93, np. centra
+-- uslug wspolnych obslugujace szkoly (dzial 69), internaty i bursy (55), zarzady
+-- drog (42, 52), zarzady gospodarki mieszkaniowej (68), komunalne (35-38).
+-- Pokazuje, ile naszej sprzedazy wypada z Public przy obecnej definicji.
+WITH linie AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
+           til.SALES_AMOUNT
+    FROM   POLAND.T_INVOICE_LINE til
+    JOIN   POLAND.T_PAYER tp
+           ON  tp.PAYER_NUMBER = til.PAYER_NUMBER
+           AND tp.COUNTRY_CODE = til.COUNTRY_CODE
+    WHERE  til.COUNTRY_CODE        = 'PL'
+      AND  til.BUSINESS_SCOPE_FLAG = 'Y'
+      AND  NVL(til.CANCELLED_FLAG, 'N')   <> 'Y'
+      AND  NVL(til.DL_DELETION_FLAG, 'N') <> 'Y'
+      AND  til.INVOICE_DATE >= ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -12)
+      AND  til.INVOICE_DATE <  TRUNC(SYSDATE, 'MM')
+),
+nip AS (
+    SELECT NIP, SUM(SALES_AMOUNT) AS SALES
+    FROM   linie
+    WHERE  NIP IS NOT NULL
+    GROUP  BY NIP
+    HAVING SUM(SALES_AMOUNT) > 0
+),
+db AS (
+    SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
+           MAX(COALESCE(REGEXP_SUBSTR(d.DZIALPKD, '^[0-9]{2}'),
+                        REGEXP_SUBSTR(d.PKD, '^[0-9]{2}')))                 AS DZIAL_DB
+    FROM   WORK_POLAND.DB_BAZA d
+    WHERE  LENGTH(REGEXP_REPLACE(d.NIP, '[^0-9]', '')) = 10
+    GROUP  BY REGEXP_REPLACE(d.NIP, '[^0-9]', '')
+),
+kpp AS (
+    SELECT LPAD(TO_CHAR(NIP), 10, '0')                                      AS NIP,
+           MAX(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'))                         AS DZIAL_KPP,
+           MAX(SUBSTR(TYP_PODMIOTU, 1, 40))                                 AS TYP_KPP
+    FROM   WORK_POLAND.T_KATALOG_PODMIOTOW_PUBLICZNYCH
+    WHERE  NIP IS NOT NULL AND KATEGORIA_PODMIOTU = 'PUBLIC' AND NVL(STATUS, 'ACTIVE') = 'ACTIVE'
+    GROUP  BY LPAD(TO_CHAR(NIP), 10, '0')
+),
+f AS (
+    SELECT n.NIP, n.SALES, kpp.TYP_KPP,
+           CASE WHEN kpp.NIP IS NOT NULL
+                  OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO')
+                THEN 'PUBLICZNY' ELSE 'INNY' END                            AS SEKTOR,
+           NVL(COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2),
+                        kpp.DZIAL_KPP, db.DZIAL_DB), '??')                  AS DZIAL
+    FROM   nip n
+    LEFT JOIN db  ON db.NIP  = n.NIP
+    LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP = n.NIP
+    LEFT JOIN kpp ON kpp.NIP = n.NIP
+),
+tot AS (
+    SELECT SUM(SALES) AS SALES_ALL FROM nip
+)
+SELECT CASE WHEN f.DZIAL IN ('84','85','86','87','88','90','91','92','93')
+            THEN 'W PUBLIC (wariant B)' ELSE 'POZA PUBLIC' END              AS GRUPA,
+       f.DZIAL,
+       COUNT(*)                                                         AS KLIENCI,
+       SUM(CASE WHEN f.TYP_KPP IS NOT NULL THEN 1 ELSE 0 END)           AS W_KATALOGU,
+       MAX(f.TYP_KPP)                                                   AS PRZYKLAD_TYPU_Z_KATALOGU,
+       ROUND(SUM(f.SALES) / MAX(t.SALES_ALL) * 100, 2)                  AS PCT_SPRZEDAZY_OGOLEM
+FROM   f
+CROSS JOIN tot t
+WHERE  f.SEKTOR = 'PUBLICZNY'
+GROUP  BY CASE WHEN f.DZIAL IN ('84','85','86','87','88','90','91','92','93')
+               THEN 'W PUBLIC (wariant B)' ELSE 'POZA PUBLIC' END, f.DZIAL
+ORDER  BY GRUPA DESC, PCT_SPRZEDAZY_OGOLEM DESC
+FETCH FIRST 45 ROWS ONLY;

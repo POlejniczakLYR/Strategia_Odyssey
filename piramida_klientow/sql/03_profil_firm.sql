@@ -34,7 +34,8 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_FIRMA_PROFIL',
     'NIP               VARCHAR2(20)   NOT NULL,
      NAZWA             VARCHAR2(1000),
      ZATRUDNIENIE      NUMBER,
-     ROK_ZATRUDNIENIA  VARCHAR2(10),
+     ZRZUT_DB_BAZA     VARCHAR2(20),
+     DATA_BADANIA      VARCHAR2(20),
      ZRODLO_ZATR       VARCHAR2(20),
      GRUPA_KAPITALOWA  VARCHAR2(255),
      DZIAL_PKD         VARCHAR2(2),
@@ -60,18 +61,23 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_FIRMA_PROFIL',
 -- TRUNCATE TABLE WORK_POLAND.T_ODY_FIRMA_PROFIL;
 
 INSERT INTO WORK_POLAND.T_ODY_FIRMA_PROFIL
-    (NIP, NAZWA, ZATRUDNIENIE, ROK_ZATRUDNIENIA, ZRODLO_ZATR, GRUPA_KAPITALOWA,
+    (NIP, NAZWA, ZATRUDNIENIE, ZRZUT_DB_BAZA, DATA_BADANIA, ZRODLO_ZATR, GRUPA_KAPITALOWA,
      DZIAL_PKD, ZRODLO_PKD, FORMA_WLASNOSCI, SEKTOR, ZRODLO_SEKTORA, FLAGA_PUBLIC,
      STATUS_REJESTR, KLASA_GUS, PIETRO_NR, PIETRO, CZY_KLIENT)
-WITH db AS (                                    -- DB_BAZA: 1 wiersz na NIP
+WITH db AS (                                    -- DB_BAZA: 1 wiersz na NIP (D05);
+    -- KEEP zostaje na wypadek dubli: bierzemy wiersz z wypelnionym zatrudnieniem
     SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                       AS NIP,
-           -- ostatni rok, w ktorym zatrudnienie jest wypelnione
            MAX(d.ZATRUDNIENIE) KEEP (DENSE_RANK LAST ORDER BY
                CASE WHEN d.ZATRUDNIENIE IS NOT NULL THEN 1 ELSE 0 END,
                d.ROK_ZATRUDNIENIA NULLS FIRST)                       AS ZATRUDNIENIE,
-           MAX(SUBSTR(d.ROK_ZATRUDNIENIA, 1, 10)) KEEP (DENSE_RANK LAST ORDER BY
+           -- aktualnosc danych: data zrzutu DB_BAZA (01.01.2022 = duze firmy,
+           -- 29.02.2024 = glownie male, 13.03.2026) i data badania (D17)
+           MAX(SUBSTR(d.DB_BAZA, 1, 20)) KEEP (DENSE_RANK LAST ORDER BY
                CASE WHEN d.ZATRUDNIENIE IS NOT NULL THEN 1 ELSE 0 END,
-               d.ROK_ZATRUDNIENIA NULLS FIRST)                       AS ROK_ZATRUDNIENIA,
+               d.ROK_ZATRUDNIENIA NULLS FIRST)                       AS ZRZUT_DB_BAZA,
+           MAX(SUBSTR(d.DATA_BADANIA, 1, 20)) KEEP (DENSE_RANK LAST ORDER BY
+               CASE WHEN d.ZATRUDNIENIE IS NOT NULL THEN 1 ELSE 0 END,
+               d.ROK_ZATRUDNIENIA NULLS FIRST)                       AS DATA_BADANIA,
            MAX(d.NAZWA_REJ) KEEP (DENSE_RANK LAST ORDER BY
                d.ROK_ZATRUDNIENIA NULLS FIRST)                       AS NAZWA,
            MAX(d.GRUPA_KAPITALOWA) KEEP (DENSE_RANK LAST ORDER BY
@@ -130,7 +136,8 @@ baza AS (
     SELECT n.NIP,
            COALESCE(cg.NAZWA, db.NAZWA, kpp.NAZWA)                   AS NAZWA,
            NVL(ko.ZATRUDNIENIE, db.ZATRUDNIENIE)                     AS ZATRUDNIENIE,
-           CASE WHEN ko.ZATRUDNIENIE IS NULL THEN db.ROK_ZATRUDNIENIA END AS ROK_ZATRUDNIENIA,
+           db.ZRZUT_DB_BAZA,
+           db.DATA_BADANIA,
            CASE WHEN ko.ZATRUDNIENIE IS NOT NULL THEN 'KOREKTA'
                 WHEN db.ZATRUDNIENIE IS NOT NULL THEN 'DB_BAZA' END  AS ZRODLO_ZATR,
            db.GRUPA_KAPITALOWA,
@@ -198,7 +205,7 @@ pietro AS (
            END                                                       AS PIETRO_NR
     FROM   flaga f
 )
-SELECT p.NIP, SUBSTR(p.NAZWA, 1, 1000), p.ZATRUDNIENIE, p.ROK_ZATRUDNIENIA, p.ZRODLO_ZATR,
+SELECT p.NIP, SUBSTR(p.NAZWA, 1, 1000), p.ZATRUDNIENIE, p.ZRZUT_DB_BAZA, p.DATA_BADANIA, p.ZRODLO_ZATR,
        p.GRUPA_KAPITALOWA, p.DZIAL_PKD, p.ZRODLO_PKD, p.FORMA_WLASNOSCI, p.SEKTOR,
        p.ZRODLO_SEKTORA, p.FLAGA_PUBLIC, p.STATUS_REJESTR, p.KLASA_GUS,
        p.PIETRO_NR, pr.PIETRO, p.CZY_KLIENT
@@ -297,14 +304,16 @@ GROUP  BY CASE WHEN p.ZATRUDNIENIE IS NOT NULL THEN 'Z_ZATRUDNIENIEM'
 
 
 -- ---------------------------------------------------------------------
--- KONTROLA 7: rozklad ROK_ZATRUDNIENIA w DB_BAZA - tylko informacyjnie;
--- diagnostyka D06: kolumna nie mowi o aktualnosci (lata od 1899, wiekszosc
--- duzych firm bez roku), dlatego nie filtrujemy po niej w 05
+-- KONTROLA 7: z ktorego zrzutu DB_BAZA jest zatrudnienie (aktualnosc danych).
+-- D17: duze firmy sa glownie w zrzucie 01.01.2022 - zatrudnienie sprzed
+-- ok. 4 lat; w 04 weryfikujemy je ze sprawozdaniami w eKRS.
+-- (ROK_ZATRUDNIENIA nie mowi o aktualnosci - D06, nie uzywamy.)
 -- ---------------------------------------------------------------------
-SELECT ROK_ZATRUDNIENIA,
+SELECT NVL(ZRZUT_DB_BAZA, '(brak)')                                     AS ZRZUT_DB_BAZA,
        COUNT(*)                                                         AS FIRMY,
-       SUM(CASE WHEN CZY_KLIENT = 'T' THEN 1 ELSE 0 END)                AS KLIENCI
+       SUM(CASE WHEN CZY_KLIENT = 'T' THEN 1 ELSE 0 END)                AS KLIENCI,
+       SUM(CASE WHEN ZATRUDNIENIE >= 1000 THEN 1 ELSE 0 END)            AS FIRMY_1000_PLUS
 FROM   WORK_POLAND.T_ODY_FIRMA_PROFIL
 WHERE  ZRODLO_ZATR = 'DB_BAZA'
-GROUP  BY ROK_ZATRUDNIENIA
-ORDER  BY ROK_ZATRUDNIENIA DESC;
+GROUP  BY NVL(ZRZUT_DB_BAZA, '(brak)')
+ORDER  BY FIRMY DESC;
