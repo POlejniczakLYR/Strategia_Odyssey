@@ -194,11 +194,19 @@ związki gmin), 5,1% sprzedaży.
 
 Wnioski:
 
-- **Nieprzypisani (17,5% sprzedaży)**: średnia sprzedaż na NIP jak na piętrze
-  0–40, a `DB_BAZA` obejmuje około 100% firm 10+. Hipoteza: to głównie
-  mikrofirmy i osoby fizyczne. Sprawdzają to D19–D20. Jeśli się potwierdzi,
-  przypisujemy ich do piętra 0–40 jako „0–9 (brak w `DB_BAZA`)”. Wtedy
-  penetracja 0–40 wynosi 0,71%.
+- **Nieprzypisani (17,5% sprzedaży)**: hipoteza „same mikrofirmy” potwierdziła
+  się tylko częściowo (D19–D20):
+  - osoby fizyczne: 5 097 NIP-ów, 2,0% sprzedaży → piętro 0–40 (podwarstwa 0–9, szacunek);
+  - spółki i inne osoby prawne: 8 509 NIP-ów, **13,8% sprzedaży**. Są wśród nich
+    duże firmy, których nie ma w `DB_BAZA`: m.in. nowe spółki z lat 2022–2025
+    (VeloBank, Orlen Paczka, Electrolux Production) oraz starsze (LPP Retail,
+    Animex Foods, Stryker, Monnari, Duży Ben). Trzeba im uzupełnić zatrudnienie
+    (`T_ODY_KOREKTA_FIRMY`): najwięksi według sprzedaży ręcznie (eKRS: przeciętne
+    zatrudnienie), resztę według decyzji (D21 pokazuje, ilu to wymaga);
+  - brak w `T_CEIDG_GUS`: 396 NIP-ów, 1,7% sprzedaży: do identyfikacji (D22);
+  - 30 największych nieprzypisanych to 27% ich sprzedaży.
+  - Do wyjaśnienia: czy wśród klientów są odsprzedawcy (np. hurtownie z działu
+    46), których nie powinno być w piramidzie.
 - **Public a organizacja sprzedaży:** region sprzedaży „Public” (351 NIP-ów,
   4,8% sprzedaży) to nie to samo co Public w wariancie B. Region obsługuje też
   spółki państwowe (energetyka, banki, transport, porty). Klienci sektora
