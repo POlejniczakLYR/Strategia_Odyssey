@@ -646,3 +646,17 @@ WHERE  KATEGORIA_PODMIOTU = 'PUBLIC'
 GROUP  BY NVL(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'), '??'), SUBSTR(TYP_PODMIOTU, 1, 50)
 ORDER  BY PODMIOTY DESC
 FETCH FIRST 40 ROWS ONLY;
+
+
+-- === D17 DB_BAZA: zrzuty (kolumna DB_BAZA) x rok badania (DATA_BADANIA)
+-- Po D06: ROK_ZATRUDNIENIA nie mowi, jak stare jest zatrudnienie (lata od 1899,
+-- 96% firm 1000+ bez roku). Sprawdzamy, czy aktualnosc pokazuje data zrzutu
+-- albo data badania.
+SELECT NVL(DB_BAZA, '(brak)')                                           AS ZRZUT,
+       NVL(REGEXP_SUBSTR(DATA_BADANIA, '[0-9]{4}'), '(brak)')           AS ROK_BADANIA,
+       COUNT(*)                                                         AS FIRMY,
+       SUM(CASE WHEN ZATRUDNIENIE >= 50   THEN 1 ELSE 0 END)            AS FIRMY_50_PLUS,
+       SUM(CASE WHEN ZATRUDNIENIE >= 1000 THEN 1 ELSE 0 END)            AS FIRMY_1000_PLUS
+FROM   WORK_POLAND.DB_BAZA
+GROUP  BY NVL(DB_BAZA, '(brak)'), NVL(REGEXP_SUBSTR(DATA_BADANIA, '[0-9]{4}'), '(brak)')
+ORDER  BY ZRZUT, ROK_BADANIA DESC;

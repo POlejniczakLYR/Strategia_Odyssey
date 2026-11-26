@@ -297,8 +297,9 @@ GROUP  BY CASE WHEN p.ZATRUDNIENIE IS NOT NULL THEN 'Z_ZATRUDNIENIEM'
 
 
 -- ---------------------------------------------------------------------
--- KONTROLA 7: z ktorego roku jest zatrudnienie w DB_BAZA
--- (stare dane = ryzyko zlego pietra; ew. filtr roku w 05)
+-- KONTROLA 7: rozklad ROK_ZATRUDNIENIA w DB_BAZA - tylko informacyjnie;
+-- diagnostyka D06: kolumna nie mowi o aktualnosci (lata od 1899, wiekszosc
+-- duzych firm bez roku), dlatego nie filtrujemy po niej w 05
 -- ---------------------------------------------------------------------
 SELECT ROK_ZATRUDNIENIA,
        COUNT(*)                                                         AS FIRMY,

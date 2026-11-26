@@ -8,7 +8,8 @@ SET DEFINE OFF;
 -- duze firmy trzeba przejrzec recznie. Typowe bledy DB_BAZA:
 --   (a) zatrudnienie CALEJ GRUPY KAPITALOWEJ wpisane przy kazdej spolce
 --       (kolumna NIP_W_GRUPIE_Z_TYM_ZATR > 1),
---   (b) stare dane (ROK_ZATRUDNIENIA sprzed kilku lat),
+--   (b) nieaktualne dane (uwaga: ROK_ZATRUDNIENIA nie mowi o aktualnosci,
+--       diagnostyka D06 - porownac ze sprawozdaniem w eKRS),
 --   (c) firma zakonczona / zawieszona (STATUS_REJESTR).
 -- Poprawki wpisujemy do WORK_POLAND.T_ODY_KOREKTA_FIRMY, np.:
 --   INSERT INTO WORK_POLAND.T_ODY_KOREKTA_FIRMY (NIP, ZATRUDNIENIE, FLAGA_PUBLIC, UWAGI)

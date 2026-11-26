@@ -21,7 +21,8 @@ SET DEFINE OFF;
 --
 -- Populacja DB_BAZA: poza Public (ta sama flaga co u klientow), z
 -- zatrudnieniem > 0, bez firm zakonczonych / zawieszonych w REGON.
--- Opcjonalnie: filtr na rok zatrudnienia (KONTROLA 7 w 03).
+-- Bez filtra na ROK_ZATRUDNIENIA - kolumna nie mowi o aktualnosci danych
+-- (diagnostyka D06: lata od 1899, 96% firm 1000+ bez roku).
 --
 -- Wymaga: 03_profil_firm.sql (po korektach z 04).
 -- Odswiezenie: TRUNCATE + ponowny INSERT (krok 2).
@@ -56,7 +57,6 @@ WITH f AS (
       AND  p.PIETRO_NR BETWEEN 1 AND 5
       AND  p.STATUS_REJESTR NOT IN ('ZAKONCZONA', 'ZAWIESZONA')
       AND  LENGTH(p.NIP) = 10
-      -- AND p.ROK_ZATRUDNIENIA >= '2022'        -- opcjonalnie, po KONTROLI 7 w 03
 ),
 k AS (
     SELECT KLASA_GUS, PIETRO_NR, ZATR FROM f
