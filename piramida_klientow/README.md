@@ -18,7 +18,13 @@ liczyło się dwa razy.
 
 **Decyzje (2026-11-26):** Public = wariant B (sektor publiczny w działach
 PKD 84–88 i 90–93), Public jako jeden blok, „firma u nas” = NIP płatnika
-z dodatnią sprzedażą netto w ostatnich 12 zamkniętych miesiącach.
+z dodatnią sprzedażą netto w ostatnich 12 zamkniętych miesiącach. BvD (Orbis)
+nie używamy. Klienci samodzielni (sami w swojej grupie TOP_LEVEL) bez
+zatrudnienia: przyjmujemy, że są poprawnie przypisani do obecnego segmentu,
+więc piętro = segment.
+
+Piętra pokrywają się z segmentami firmy (`WORK_POLAND.MATRYCA_ZATRUDNIENIA`):
+0–40 = IS, 41–200 = PF, 201–500 = MM, 501–4000 = K&N, 4001+ = STRATEGIC.
 
 ## Źródła danych
 
@@ -210,16 +216,21 @@ Wnioski:
     ma średnio mniejszą sprzedaż na NIP niż klienci 0–40;
   - BvD (Orbis) w `T_PAYER` / `T_COMPANY` **nie używamy**: słabe źródło
     (decyzja 2026-11-26);
-  - **jak przypisujemy klientów bez zatrudnienia** (`sql/03`, kolumna `PIETRO_ZRODLO`):
-    osoby fizyczne → 0–40 (szacunek); spółki spoza 200 największych według
-    sprzedaży → 0–40 (szacunek, sprzedaż na NIP niższa niż średnio w 0–40);
-    200 największych → `DO_UZUPELNIENIA` (lista B w `sql/04`, zatrudnienie z eKRS);
-    grupy VAT → mapowanie na NIP spółki (lista C, `T_ODY_MAPA_NIP`); NIP-y
-    zagraniczne → osobny wiersz „poza rynkiem PL” (piętro 98);
-  - **do sprawdzenia: TOP_LEVEL** (lider grupy zakupowej) jako podpowiedź dla
-    nieprzypisanych. Jeśli NIP-y ze znanym zatrudnieniem w tej samej grupie są
-    w ≥ 70% na jednym piętrze, nieprzypisany NIP dostaje to piętro jako szacunek.
-    Nie przypisujemy NIP-owi zatrudnienia całej grupy (D23–D24);
+  - **jak przypisujemy klientów bez zatrudnienia** (`sql/03`, kolumna
+    `PIETRO_ZRODLO`), według ich grupy TOP_LEVEL (D23):
+
+    | Rodzaj | NIP-y / % sprzedaży (D23) | Piętro |
+    |---|---|---|
+    | Sam w grupie | 10 615 / 10,5% | z segmentu obecnego: IS → 0–40, PF → 41–200, MM → 201–500, CORPORATE Strategic → 4001+, pozostałe CORPORATE → 501–4000, SMB bez segmentu → 0–40 (`SZACUNEK_SEGMENT`) |
+    | Grupa jednorodna (≥ 70% znanych na 1 piętrze) | 346 / 0,6% | najczęstsze piętro w grupie (`SZACUNEK_GRUPA_TOP_LEVEL`) |
+    | Inna grupa (różnorodna, bez danych, 1 znany) | 2 195 / 4,4% | 200 największych → `DO_UZUPELNIENIA` (lista B, eKRS); reszta z segmentu (`SZACUNEK_SEGMENT_W_GRUPIE`) |
+
+    Zatrudnienie szacunkowe (do sumy pracujących w `06`) = mediana zatrudnienia
+    naszych klientów ze znanym zatrudnieniem na tym samym piętrze. Nie wchodzi
+    do proporcji w `05`. Zgodność segmentu z piętrem sprawdza D25. Grupy VAT →
+    mapowanie na NIP spółki (lista C, `T_ODY_MAPA_NIP`); NIP-y zagraniczne →
+    osobny wiersz „poza rynkiem PL” (piętro 98). NIP-owi nie przypisujemy
+    zatrudnienia całej grupy TOP_LEVEL;
   - 30 największych nieprzypisanych to 27% ich sprzedaży.
   - Do wyjaśnienia: czy wśród klientów są odsprzedawcy (np. hurtownie z działu
     46), których nie powinno być w piramidzie.
@@ -247,7 +258,7 @@ jest tylko jako udział %. Dopiero gdy wyniki mają sens, budujemy tabele `00`�
 | `sql/01_rynek_gus_dane.sql` | INSERT-y danych GUS (plik generowany, wariant B) | `T_ODY_RYNEK_GUS` |
 | `sql/02_klienci_ltm.sql` | Nasi klienci: NIP z dodatnią sprzedażą w ostatnich 12 zamkniętych miesiącach (po mapowaniu grup VAT), typ NIP-u, główny płatnik i SOLDTO, region sprzedaży, flaga „region Public” | `T_ODY_KLIENT_LTM` |
 | `sql/03_profil_firm.sql` | Profil każdej firmy (rynek z `DB_BAZA` + nasi klienci): zatrudnienie, PKD, sektor, flaga Public, piętro i źródło piętra (`PIETRO_ZRODLO`). Kontrole flagi Public i udziału szacunków | `T_ODY_FIRMA_PROFIL` |
-| `sql/04_listy_do_weryfikacji.sql` | Lista A: firmy ≥ 3000 (weryfikacja 4001+). Lista B: 200 największych klientów bez zatrudnienia (eKRS). Lista C: grupy VAT i NIP-y zagraniczne (mapowanie). Poprawki → `T_ODY_KOREKTA_FIRMY` / `T_ODY_MAPA_NIP` → ponownie `02`/`03` | – |
+| `sql/04_listy_do_weryfikacji.sql` | Lista A: firmy ≥ 3000 (weryfikacja 4001+). Lista B: 200 największych klientów bez zatrudnienia z grup bez jednoznacznego piętra (eKRS). Lista C: grupy VAT i NIP-y zagraniczne (mapowanie). Poprawki → `T_ODY_KOREKTA_FIRMY` / `T_ODY_MAPA_NIP` → ponownie `02`/`03` | – |
 | `sql/05_proporcje.sql` | Proporcje podziału klas GUS na piętra (z `DB_BAZA`) | `T_ODY_PROPORCJE` |
 | `sql/06_piramida.sql` | Piramida: rynek, nasi klienci (w tym szacunki), penetracja, pokrycie pracujących, sprzedaż, w tym obsługa przez region Public; kontrole; podwarstwy 0–9 / 10–40 / szacunek | `T_ODY_PIRAMIDA` |
 
@@ -273,11 +284,12 @@ Przy pierwszym uruchomieniu warto przejść kontrole po każdym kroku.
 4. **Lista C** (`04`): grupy VAT i NIP-y zagraniczne → `T_ODY_MAPA_NIP` →
    ponownie `02` i `03`.
 5. **Listy B i A** (`04`): zatrudnienie 200 największych klientów bez danych
-   (eKRS) i weryfikacja firm ≥ 3000 → `T_ODY_KOREKTA_FIRMY` → ponownie `03`.
+   z grup bez jednoznacznego piętra (eKRS) i weryfikacja firm ≥ 3000 →
+   `T_ODY_KOREKTA_FIRMY` → ponownie `03`.
 6. **Wynik:** `05` → `06`, z kontrolami.
 7. **Prezentacja:** piramida + tabela, z przypisem, co jest szacunkiem
-   (podział klas GUS na progi, pracujący Public według wielkości, klienci
-   bez zatrudnienia przypisani do 0–40).
+   (podział klas GUS na progi, pracujący Public według wielkości, piętro
+   klientów bez zatrudnienia z segmentu obecnego / grupy TOP_LEVEL).
 
 ## Ograniczenia, o których mówimy przy prezentacji
 

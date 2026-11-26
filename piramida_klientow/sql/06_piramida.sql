@@ -6,7 +6,8 @@ SET DEFINE OFF;
 -- WORK_POLAND.T_ODY_PIRAMIDA - wynik: na kazdym pietrze
 --   rynek (GUS):  firmy, pracujacy
 --   Lyreco:       firmy (NIP z zakupami LTM), w tym oszacowane (bez zatrudnienia),
---                 pracujacy u nich (DB_BAZA / korekta), sprzedaz i marza LTM,
+--                 pracujacy u nich: znani (DB_BAZA / korekta) + szacunek dla
+--                 oszacowanych (mediana pietra, 03), sprzedaz i marza LTM,
 --                 w tym obsluga przez region sprzedazy "Public"
 --   wskazniki:    penetracja firm, pokrycie pracujacych, udzial w sprzedazy
 --
@@ -40,6 +41,7 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_PIRAMIDA',
      FIRMY_LYRECO_SZACUNEK  NUMBER,
      FIRMY_LYRECO_Z_ZATR    NUMBER,
      PRACUJACY_LYRECO       NUMBER,
+     PRACUJACY_LYRECO_SZAC  NUMBER,
      SALES_LTM              NUMBER,
      MARGIN_LTM             NUMBER,
      FIRMY_REGION_PUBLIC    NUMBER,
@@ -49,7 +51,9 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_PIRAMIDA',
      UDZIAL_SALES_PCT       NUMBER,
      DATA_WCZYTANIA         DATE           DEFAULT SYSDATE');
 -- FIRMY_LYRECO_SZACUNEK: klienci przypisani do pietra bez zatrudnienia
---                        (osoby fizyczne i spolki z mala sprzedaza -> 0-40)
+--                        (segment obecny / grupa TOP_LEVEL - 03, PIETRO_ZRODLO)
+-- PRACUJACY_LYRECO     : znane zatrudnienie; PRACUJACY_LYRECO_SZAC: szacunek
+--                        dla oszacowanych; POKRYCIE_PRAC_PCT liczone z sumy obu
 -- FIRMY_REGION_PUBLIC  : klienci, ktorych ktorykolwiek SOLDTO jest w regionie
 --                        sprzedazy "Public" (SALES_REGION_PUBLIC - ich sprzedaz)
 
@@ -62,7 +66,7 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_PIRAMIDA',
 INSERT INTO WORK_POLAND.T_ODY_PIRAMIDA
     (PIETRO_NR, PIETRO, FIRMY_RYNEK, FIRMY_RYNEK_REGON, PRACUJACY_RYNEK,
      FIRMY_LYRECO, FIRMY_LYRECO_SZACUNEK, FIRMY_LYRECO_Z_ZATR, PRACUJACY_LYRECO,
-     SALES_LTM, MARGIN_LTM, FIRMY_REGION_PUBLIC, SALES_REGION_PUBLIC,
+     PRACUJACY_LYRECO_SZAC, SALES_LTM, MARGIN_LTM, FIRMY_REGION_PUBLIC, SALES_REGION_PUBLIC,
      PENETRACJA_FIRM_PCT, POKRYCIE_PRAC_PCT, UDZIAL_SALES_PCT)
 WITH rynek_klasy AS (
     SELECT MIARA, GRUPA, KLASA_GUS, SUM(WARTOSC) AS WARTOSC
@@ -95,6 +99,7 @@ lyreco AS (
            SUM(CASE WHEN p.PIETRO_ZRODLO LIKE 'SZACUNEK%' THEN 1 ELSE 0 END) AS FIRMY_LYRECO_SZACUNEK,
            COUNT(p.ZATRUDNIENIE)                                        AS FIRMY_LYRECO_Z_ZATR,
            SUM(p.ZATRUDNIENIE)                                          AS PRACUJACY_LYRECO,
+           SUM(p.ZATRUDNIENIE_SZAC)                                     AS PRACUJACY_LYRECO_SZAC,
            SUM(k.SALES_LTM)                                             AS SALES_LTM,
            SUM(k.MARGIN_LTM)                                            AS MARGIN_LTM,
            SUM(CASE WHEN k.REGION_PUBLIC = 'T' THEN 1 ELSE 0 END)       AS FIRMY_REGION_PUBLIC,
@@ -113,12 +118,14 @@ SELECT pg.PIETRO_NR,
        NVL(l.FIRMY_LYRECO_SZACUNEK, 0),
        NVL(l.FIRMY_LYRECO_Z_ZATR, 0),
        l.PRACUJACY_LYRECO,
+       l.PRACUJACY_LYRECO_SZAC,
        l.SALES_LTM,
        l.MARGIN_LTM,
        NVL(l.FIRMY_REGION_PUBLIC, 0),
        l.SALES_REGION_PUBLIC,
        ROUND(l.FIRMY_LYRECO     / NULLIF(r.FIRMY_RYNEK, 0)     * 100, 2) AS PENETRACJA_FIRM_PCT,
-       ROUND(l.PRACUJACY_LYRECO / NULLIF(r.PRACUJACY_RYNEK, 0) * 100, 2) AS POKRYCIE_PRAC_PCT,
+       ROUND((NVL(l.PRACUJACY_LYRECO, 0) + NVL(l.PRACUJACY_LYRECO_SZAC, 0))
+             / NULLIF(r.PRACUJACY_RYNEK, 0) * 100, 2)                   AS POKRYCIE_PRAC_PCT,
        ROUND(RATIO_TO_REPORT(l.SALES_LTM) OVER () * 100, 1)              AS UDZIAL_SALES_PCT
 FROM   WORK_POLAND.T_ODY_PIRAMIDA_PROGI pg
 LEFT JOIN rynek_pietra r ON r.PIETRO_NR = pg.PIETRO_NR
@@ -132,7 +139,7 @@ COMMIT;
 -- ---------------------------------------------------------------------
 SELECT PIETRO_NR, PIETRO,
        FIRMY_RYNEK, FIRMY_LYRECO, FIRMY_LYRECO_SZACUNEK, PENETRACJA_FIRM_PCT,
-       PRACUJACY_RYNEK, PRACUJACY_LYRECO, POKRYCIE_PRAC_PCT,
+       PRACUJACY_RYNEK, PRACUJACY_LYRECO, PRACUJACY_LYRECO_SZAC, POKRYCIE_PRAC_PCT,
        UDZIAL_SALES_PCT,
        FIRMY_REGION_PUBLIC,
        ROUND(SALES_REGION_PUBLIC / NULLIF(SUM(SALES_LTM) OVER (), 0) * 100, 1) AS UDZIAL_SALES_REGION_PUBLIC_PCT,
@@ -162,6 +169,18 @@ SELECT g.MIARA, g.GUS, p.PIETRA, p.PIETRA - g.GUS AS ROZNICA
 FROM   gus g
 JOIN   pietra p ON p.MIARA = g.MIARA
 ORDER  BY g.MIARA;
+
+
+-- ---------------------------------------------------------------------
+-- KONTROLA 1b: nasi klienci wg pietra i zrodla pietra (ile to szacunek)
+-- ---------------------------------------------------------------------
+SELECT p.PIETRO_NR, p.PIETRO, p.PIETRO_ZRODLO,
+       COUNT(*)                                                         AS KLIENCI,
+       ROUND(RATIO_TO_REPORT(SUM(k.SALES_LTM)) OVER () * 100, 2)        AS PCT_SPRZEDAZY
+FROM   WORK_POLAND.T_ODY_KLIENT_LTM k
+JOIN   WORK_POLAND.T_ODY_FIRMA_PROFIL p ON p.NIP = k.NIP
+GROUP  BY p.PIETRO_NR, p.PIETRO, p.PIETRO_ZRODLO
+ORDER  BY p.PIETRO_NR, p.PIETRO_ZRODLO;
 
 
 -- ---------------------------------------------------------------------
@@ -207,7 +226,7 @@ l AS (
                 WHEN p.ZATRUDNIENIE <= 9    THEN '1a: 0-9'
                 ELSE                             '1b: 10-40' END        AS PODWARSTWA,
            COUNT(*)                AS FIRMY_LYRECO,
-           SUM(p.ZATRUDNIENIE)     AS PRACUJACY_LYRECO,
+           SUM(NVL(p.ZATRUDNIENIE, p.ZATRUDNIENIE_SZAC)) AS PRACUJACY_LYRECO,
            SUM(k.SALES_LTM)        AS SALES_LTM
     FROM   WORK_POLAND.T_ODY_KLIENT_LTM k
     JOIN   WORK_POLAND.T_ODY_FIRMA_PROFIL p ON p.NIP = k.NIP

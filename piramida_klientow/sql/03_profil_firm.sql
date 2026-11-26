@@ -24,15 +24,26 @@ SET DEFINE OFF;
 --   98 POZA_RYNKIEM_PL  NIP zagraniczny / inny niz 10 cyfr (ZAGRANICZNY)
 --    6 PUBLIC           flaga Public (PUBLIC)
 --  1-5                  wg zatrudnienia i T_ODY_PIRAMIDA_PROGI (ZATRUDNIENIE)
---  klienci BEZ zatrudnienia (decyzja 2026-11-26, diagnostyka D19-D21):
---    1 0-40             osoba fizyczna z CEIDG (SZACUNEK_OSOBA_FIZYCZNA)
---    1 0-40             spolka spoza TOP_N wg sprzedazy - sprzedaz na NIP nizsza
---                       niz srednio w 0-40 (SZACUNEK_MALA_SPRZEDAZ)
---   99 DO_UZUPELNIENIA  spolka z TOP_N wg sprzedazy - uzupelnic zatrudnienie
---                       recznie (lista B w 04) albo zmapowac grupe VAT (lista C)
---   TOP_N_RECZNIE = 200 (CTE par) - 200 najwiekszych to polowa sprzedazy
---   spolek bez zatrudnienia (D21)
---  firmy rynku (nie klienci) bez zatrudnienia: 99 (BRAK_ZATRUDNIENIA), nie
+--  klienci BEZ zatrudnienia (decyzje 2026-11-26, diagnostyka D19-D23), wg grupy
+--  TOP_LEVEL (lider grupy zakupowej) wsrod naszych klientow:
+--    SAM (jedyny NIP w grupie) -> pietro wg SEGMENTU OBECNEGO (zakladamy, ze
+--        segment jest przypisany poprawnie): IS -> 0-40, PF -> 41-200,
+--        MM -> 201-500, CORPORATE Strategic -> 4001+, pozostale CORPORATE
+--        (K&N, International, Public, Other CA) -> 501-4000, SMB bez
+--        segmentu -> 0-40                                   (SZACUNEK_SEGMENT)
+--        Progi segmentow = WORK_POLAND.MATRYCA_ZATRUDNIENIA (IS 1-40, PF 41-200,
+--        MM 201-500, K&N 501-4000, STRATEGIC 4001+) - te same co pietra.
+--    GRUPA JEDNORODNA (>= 2 znanych NIP-ow, >= 70% na jednym pietrze)
+--        -> najczestsze pietro w grupie                 (SZACUNEK_GRUPA_TOP_LEVEL)
+--    INNA GRUPA (roznorodna / bez danych / 1 znany):
+--        TOP_N wg sprzedazy -> 99 DO_UZUPELNIENIA (lista B w 04, eKRS)
+--        reszta -> pietro wg segmentu obecnego          (SZACUNEK_SEGMENT_W_GRUPIE)
+--    TOP_N_RECZNIE = 200 (CTE par)
+--  ZATRUDNIENIE_SZAC: dla szacunkow - mediana zatrudnienia naszych klientow
+--  ze znanym zatrudnieniem na tym samym pietrze (do sumy pracujacych w 06);
+--  nie wchodzi do proporcji w 05.
+--  Grupy VAT / NIP-y zagraniczne: lista C w 04 (T_ODY_MAPA_NIP).
+--  Firmy rynku (nie klienci) bez zatrudnienia: 99 (BRAK_ZATRUDNIENIA), nie
 --  wchodza do proporcji w 05
 --
 -- Wymaga: 00_setup.sql, 02_klienci_ltm.sql.
@@ -64,13 +75,17 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_FIRMA_PROFIL',
      PIETRO_ZRODLO     VARCHAR2(30),
      TYP_PODMIOTU      VARCHAR2(5),
      TYP_NIP           VARCHAR2(20),
+     SEGMENT_OBECNY    VARCHAR2(20),
+     TOP_LEVEL         VARCHAR2(30),
+     ZATRUDNIENIE_SZAC NUMBER,
      CZY_KLIENT        CHAR(1),
      DATA_WCZYTANIA    DATE           DEFAULT SYSDATE');
 -- ZRODLO_ZATR   : DB_BAZA / KOREKTA
 -- SEKTOR        : PUBLICZNY / PRYWATNY / NIEZNANY
 -- STATUS_REJESTR: AKTYWNA / ZAWIESZONA / ZAKONCZONA / BRAK (NIP-u nie ma w T_CEIDG_GUS)
--- PIETRO_ZRODLO : ZATRUDNIENIE / PUBLIC / ZAGRANICZNY / SZACUNEK_OSOBA_FIZYCZNA /
---                 SZACUNEK_MALA_SPRZEDAZ / DO_UZUPELNIENIA / BRAK_ZATRUDNIENIA
+-- PIETRO_ZRODLO : ZATRUDNIENIE / PUBLIC / ZAGRANICZNY / SZACUNEK_SEGMENT /
+--                 SZACUNEK_GRUPA_TOP_LEVEL / SZACUNEK_SEGMENT_W_GRUPIE /
+--                 DO_UZUPELNIENIA / BRAK_ZATRUDNIENIA
 -- TYP_PODMIOTU  : z T_CEIDG_GUS (P / F / LP ...); TYP_NIP: z T_ODY_KLIENT_LTM
 
 
@@ -83,9 +98,9 @@ INSERT INTO WORK_POLAND.T_ODY_FIRMA_PROFIL
     (NIP, NAZWA, ZATRUDNIENIE, ZRZUT_DB_BAZA, DATA_BADANIA, ZRODLO_ZATR, GRUPA_KAPITALOWA,
      DZIAL_PKD, ZRODLO_PKD, FORMA_WLASNOSCI, SEKTOR, ZRODLO_SEKTORA, FLAGA_PUBLIC,
      STATUS_REJESTR, KLASA_GUS, PIETRO_NR, PIETRO, PIETRO_ZRODLO, TYP_PODMIOTU, TYP_NIP,
-     CZY_KLIENT)
-WITH par AS (                                   -- parametr: ilu najwiekszych klientow bez
-    SELECT 200 AS TOP_N_RECZNIE FROM dual       -- zatrudnienia uzupelniamy recznie (lista B w 04)
+     SEGMENT_OBECNY, TOP_LEVEL, ZATRUDNIENIE_SZAC, CZY_KLIENT)
+WITH par AS (                                   -- parametr: ilu najwiekszych klientow z grup
+    SELECT 200 AS TOP_N_RECZNIE FROM dual       -- bez jednoznacznego pietra uzupelniamy recznie
 ),
 db AS (                                    -- DB_BAZA: 1 wiersz na NIP (D05);
     -- KEEP zostaje na wypadek dubli: bierzemy wiersz z wypelnionym zatrudnieniem
@@ -113,7 +128,7 @@ db AS (                                    -- DB_BAZA: 1 wiersz na NIP (D05);
     GROUP  BY REGEXP_REPLACE(d.NIP, '[^0-9]', '')
 ),
 kl AS (
-    SELECT NIP, TYP_NIP, SALES_LTM FROM WORK_POLAND.T_ODY_KLIENT_LTM
+    SELECT NIP, TYP_NIP, SALES_LTM, SEGMENT_OBECNY, TOP_LEVEL FROM WORK_POLAND.T_ODY_KLIENT_LTM
 ),
 nipy AS (
     SELECT NIP FROM db
@@ -191,6 +206,8 @@ baza AS (
            cg.TYP_PODMIOTU,
            kl.TYP_NIP,
            kl.SALES_LTM,
+           kl.SEGMENT_OBECNY,
+           kl.TOP_LEVEL,
            CASE WHEN kl.NIP IS NOT NULL THEN 'T' ELSE 'N' END        AS CZY_KLIENT
     FROM   nipy n
     LEFT JOIN db  ON db.NIP  = n.NIP
@@ -210,23 +227,71 @@ flaga AS (
            END                                                       AS FLAGA_PUBLIC
     FROM   baza b
 ),
-ranking AS (                                    -- klienci-spolki bez zatrudnienia: ranking wg sprzedazy
+z AS (                                          -- pietro wg zatrudnienia (gdy znane)
     SELECT f.*,
+           CASE WHEN f.ZATRUDNIENIE IS NOT NULL
+                THEN (SELECT MIN(pr.PIETRO_NR)
+                      FROM   WORK_POLAND.T_ODY_PIRAMIDA_PROGI pr
+                      WHERE  pr.PIETRO_NR BETWEEN 1 AND 5
+                        AND  f.ZATRUDNIENIE >= pr.ZATR_OD
+                        AND  f.ZATRUDNIENIE <= NVL(pr.ZATR_DO, f.ZATRUDNIENIE))
+           END                                                       AS PIETRO_ZATR,
+           CASE f.SEGMENT_OBECNY                                     -- segment -> pietro
+               WHEN 'IS'        THEN 1
+               WHEN 'PF'        THEN 2
+               WHEN 'MM'        THEN 3
+               WHEN 'STRATEGIC' THEN 5
+               WHEN 'SMB_INNE'  THEN 1
+               ELSE                  4                               -- K&N, INTERNATIONAL, CA_PUBLIC, CA_INNE
+           END                                                       AS PIETRO_SEGMENT,
            CASE WHEN f.CZY_KLIENT = 'T'
-                 AND f.ZATRUDNIENIE IS NULL
                  AND f.FLAGA_PUBLIC = 'N'
                  AND NVL(f.TYP_NIP, 'NIP') IN ('NIP', 'GRUPA_VAT')
-                 AND NVL(f.TYP_PODMIOTU, '-') <> 'F'
-                THEN ROW_NUMBER() OVER (
-                         PARTITION BY CASE WHEN f.CZY_KLIENT = 'T'
-                                            AND f.ZATRUDNIENIE IS NULL
-                                            AND f.FLAGA_PUBLIC = 'N'
-                                            AND NVL(f.TYP_NIP, 'NIP') IN ('NIP', 'GRUPA_VAT')
-                                            AND NVL(f.TYP_PODMIOTU, '-') <> 'F'
-                                           THEN 1 END
-                         ORDER BY f.SALES_LTM DESC NULLS LAST, f.NIP)
-           END                                                       AS RN_BEZ_ZATR
+                THEN 1 ELSE 0 END                                    AS KLIENT_PL
     FROM   flaga f
+),
+grp AS (                                        -- grupy TOP_LEVEL wsrod naszych klientow (PL, poza Public)
+    SELECT TOP_LEVEL,
+           COUNT(*)                                                  AS NIP_W_GRUPIE,
+           COUNT(PIETRO_ZATR)                                        AS NIP_Z_ZATR
+    FROM   z
+    WHERE  KLIENT_PL = 1
+      AND  TOP_LEVEL IS NOT NULL
+    GROUP  BY TOP_LEVEL
+),
+moda AS (                                       -- najczestsze pietro w grupie (klienci ze znanym zatrudnieniem)
+    SELECT TOP_LEVEL, PIETRO_ZATR AS PIETRO_MODA, UDZIAL AS UDZIAL_MODY
+    FROM  (SELECT TOP_LEVEL, PIETRO_ZATR,
+                  CNT / SUM(CNT) OVER (PARTITION BY TOP_LEVEL)       AS UDZIAL,
+                  ROW_NUMBER() OVER (PARTITION BY TOP_LEVEL ORDER BY CNT DESC, PIETRO_ZATR) AS RN
+           FROM  (SELECT TOP_LEVEL, PIETRO_ZATR, COUNT(*) AS CNT
+                  FROM   z
+                  WHERE  KLIENT_PL = 1
+                    AND  PIETRO_ZATR IS NOT NULL
+                    AND  TOP_LEVEL IS NOT NULL
+                  GROUP  BY TOP_LEVEL, PIETRO_ZATR))
+    WHERE  RN = 1
+),
+rodzaj AS (                                     -- klienci bez zatrudnienia: SAM / JEDNORODNA / INNA_GRUPA
+    SELECT z.*,
+           CASE WHEN z.KLIENT_PL = 1 AND z.ZATRUDNIENIE IS NULL THEN
+                CASE WHEN NVL(g.NIP_W_GRUPIE, 1) = 1                    THEN 'SAM'
+                     WHEN g.NIP_Z_ZATR >= 2 AND m.UDZIAL_MODY >= 0.7    THEN 'JEDNORODNA'
+                     ELSE                                                    'INNA_GRUPA' END
+           END                                                       AS RODZAJ_BRAKU,
+           m.PIETRO_MODA
+    FROM   z
+    LEFT JOIN grp  g ON g.TOP_LEVEL = z.TOP_LEVEL
+    LEFT JOIN moda m ON m.TOP_LEVEL = z.TOP_LEVEL
+),
+ranking AS (                                    -- INNA_GRUPA: ranking wg sprzedazy (TOP_N -> recznie)
+    SELECT r.*,
+           CASE WHEN r.RODZAJ_BRAKU = 'INNA_GRUPA'
+                THEN ROW_NUMBER() OVER (
+                         PARTITION BY CASE WHEN r.RODZAJ_BRAKU = 'INNA_GRUPA' THEN 1 END
+                         ORDER BY r.SALES_LTM DESC NULLS LAST, r.NIP)
+           END                                                       AS RN_INNA_GRUPA
+    FROM   rodzaj r
 ),
 pietro AS (
     SELECT r.*,
@@ -241,35 +306,44 @@ pietro AS (
            CASE
                WHEN NVL(r.TYP_NIP, 'NIP') IN ('ZAGRANICZNY', 'NIE_10_CYFR') THEN 98
                WHEN r.FLAGA_PUBLIC = 'T'                                     THEN 6
-               WHEN r.ZATRUDNIENIE IS NOT NULL
-                    THEN (SELECT MIN(pr.PIETRO_NR)
-                          FROM   WORK_POLAND.T_ODY_PIRAMIDA_PROGI pr
-                          WHERE  pr.PIETRO_NR BETWEEN 1 AND 5
-                            AND  r.ZATRUDNIENIE >= pr.ZATR_OD
-                            AND  r.ZATRUDNIENIE <= NVL(pr.ZATR_DO, r.ZATRUDNIENIE))
+               WHEN r.PIETRO_ZATR IS NOT NULL                                THEN r.PIETRO_ZATR
                WHEN r.CZY_KLIENT = 'N'                                       THEN 99
-               WHEN r.TYP_PODMIOTU = 'F'                                     THEN 1
-               WHEN r.RN_BEZ_ZATR > (SELECT TOP_N_RECZNIE FROM par)          THEN 1
-               ELSE                                                               99
+               WHEN r.RODZAJ_BRAKU = 'SAM'                                   THEN r.PIETRO_SEGMENT
+               WHEN r.RODZAJ_BRAKU = 'JEDNORODNA'                            THEN r.PIETRO_MODA
+               WHEN r.RN_INNA_GRUPA <= (SELECT TOP_N_RECZNIE FROM par)       THEN 99
+               ELSE                                                               r.PIETRO_SEGMENT
            END                                                       AS PIETRO_NR,
            CASE
                WHEN NVL(r.TYP_NIP, 'NIP') IN ('ZAGRANICZNY', 'NIE_10_CYFR') THEN 'ZAGRANICZNY'
                WHEN r.FLAGA_PUBLIC = 'T'                                     THEN 'PUBLIC'
-               WHEN r.ZATRUDNIENIE IS NOT NULL                               THEN 'ZATRUDNIENIE'
+               WHEN r.PIETRO_ZATR IS NOT NULL                                THEN 'ZATRUDNIENIE'
                WHEN r.CZY_KLIENT = 'N'                                       THEN 'BRAK_ZATRUDNIENIA'
-               WHEN r.TYP_PODMIOTU = 'F'                                     THEN 'SZACUNEK_OSOBA_FIZYCZNA'
-               WHEN r.RN_BEZ_ZATR > (SELECT TOP_N_RECZNIE FROM par)          THEN 'SZACUNEK_MALA_SPRZEDAZ'
-               ELSE                                                               'DO_UZUPELNIENIA'
+               WHEN r.RODZAJ_BRAKU = 'SAM'                                   THEN 'SZACUNEK_SEGMENT'
+               WHEN r.RODZAJ_BRAKU = 'JEDNORODNA'                            THEN 'SZACUNEK_GRUPA_TOP_LEVEL'
+               WHEN r.RN_INNA_GRUPA <= (SELECT TOP_N_RECZNIE FROM par)       THEN 'DO_UZUPELNIENIA'
+               ELSE                                                               'SZACUNEK_SEGMENT_W_GRUPIE'
            END                                                       AS PIETRO_ZRODLO
     FROM   ranking r
+),
+med AS (                                        -- mediana zatrudnienia naszych klientow na pietrze
+    SELECT PIETRO_NR, MEDIAN(ZATRUDNIENIE) AS MEDIANA_ZATR
+    FROM   pietro
+    WHERE  CZY_KLIENT = 'T'
+      AND  PIETRO_ZRODLO = 'ZATRUDNIENIE'
+    GROUP  BY PIETRO_NR
 )
 SELECT p.NIP, SUBSTR(p.NAZWA, 1, 1000), p.ZATRUDNIENIE, p.ZRZUT_DB_BAZA, p.DATA_BADANIA, p.ZRODLO_ZATR,
        p.GRUPA_KAPITALOWA, p.DZIAL_PKD, p.ZRODLO_PKD, p.FORMA_WLASNOSCI, p.SEKTOR,
        p.ZRODLO_SEKTORA, p.FLAGA_PUBLIC, p.STATUS_REJESTR, p.KLASA_GUS,
-       p.PIETRO_NR, pr.PIETRO, p.PIETRO_ZRODLO, p.TYP_PODMIOTU, p.TYP_NIP, p.CZY_KLIENT
+       p.PIETRO_NR, pr.PIETRO, p.PIETRO_ZRODLO, p.TYP_PODMIOTU, p.TYP_NIP,
+       p.SEGMENT_OBECNY, p.TOP_LEVEL,
+       CASE WHEN p.PIETRO_ZRODLO LIKE 'SZACUNEK%' THEN ROUND(md.MEDIANA_ZATR) END AS ZATRUDNIENIE_SZAC,
+       p.CZY_KLIENT
 FROM   pietro p
 LEFT JOIN WORK_POLAND.T_ODY_PIRAMIDA_PROGI pr
-       ON pr.PIETRO_NR = p.PIETRO_NR;
+       ON pr.PIETRO_NR = p.PIETRO_NR
+LEFT JOIN med md
+       ON md.PIETRO_NR = p.PIETRO_NR;
 
 COMMIT;
 

@@ -13,9 +13,11 @@ SET DEFINE OFF;
 --       (b) nieaktualne dane: duze firmy sa glownie w zrzucie z 01.01.2022 (D17),
 --       (c) firma zakonczona / zawieszona (STATUS_REJESTR).
 --
---   LISTA B - NASI KLIENCI DO UZUPELNIENIA (pietro 99): spolki bez zatrudnienia
---     z TOP_N wg sprzedazy (03, parametr TOP_N_RECZNIE = 200). Zatrudnienie
---     z eKRS (przecietne zatrudnienie ze sprawozdania finansowego).
+--   LISTA B - NASI KLIENCI DO UZUPELNIENIA (pietro 99): klienci bez zatrudnienia
+--     z grup TOP_LEVEL bez jednoznacznego pietra (roznorodne / bez danych),
+--     TOP_N wg sprzedazy (03, parametr TOP_N_RECZNIE = 200). Klienci-NIP-y
+--     samodzielne i z grup jednorodnych dostaja pietro z szacunku (03).
+--     Zatrudnienie z eKRS (przecietne zatrudnienie ze sprawozdania finansowego).
 --
 --   LISTA C - NIP-Y SPOZA T_CEIDG_GUS (grupy VAT, NIP-y zagraniczne): do
 --     zmapowania w T_ODY_MAPA_NIP (grupa VAT -> NIP spolki; zagraniczny).
@@ -115,8 +117,9 @@ ORDER  BY ZATRUDNIENIE DESC;
 
 
 -- ---------------------------------------------------------------------
--- LISTA B: nasi klienci DO_UZUPELNIENIA - spolki bez zatrudnienia z TOP_N
--- wg sprzedazy. Sprzedaz jako udzial %. Uzupelnic ZATRUDNIENIE z eKRS.
+-- LISTA B: nasi klienci DO_UZUPELNIENIA - bez zatrudnienia, z grup TOP_LEVEL
+-- bez jednoznacznego pietra, TOP_N wg sprzedazy. Sprzedaz jako udzial %.
+-- Uzupelnic ZATRUDNIENIE z eKRS. SEGMENT_OBECNY - podpowiedz.
 -- Grupy VAT (TYP_NIP = 'GRUPA_VAT' po mapowaniu) dostaja zatrudnienie
 -- spolki docelowej.
 -- ---------------------------------------------------------------------
@@ -126,6 +129,8 @@ SELECT p.NIP,
        k.TYP_NIP,
        p.DZIAL_PKD,
        p.STATUS_REJESTR,
+       p.SEGMENT_OBECNY,
+       p.TOP_LEVEL,
        k.SALES_FORCE_TYPE_CODE,
        k.SALES_FORCE_REGION,
        ROUND(k.SALES_LTM / (SELECT SUM(SALES_LTM) FROM WORK_POLAND.T_ODY_KLIENT_LTM) * 100, 3)

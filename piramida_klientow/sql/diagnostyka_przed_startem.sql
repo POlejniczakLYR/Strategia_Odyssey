@@ -1264,3 +1264,130 @@ WHERE  u.NIP_W_GRUPIE > 1
 GROUP  BY u.TOP_LEVEL
 ORDER  BY SUM(u.SALES) DESC
 FETCH FIRST 30 ROWS ONLY;
+
+
+-- =====================================================================
+-- I. WALIDACJA: czy SEGMENT OBECNY zgadza sie z pietrem wg zatrudnienia?
+-- Decyzja 2026-11-26: NIP-y samodzielne (bez grupy TOP_LEVEL) bez zatrudnienia
+-- dostaja pietro z segmentu obecnego. Sprawdzamy to na klientach, KTORZY MAJA
+-- zatrudnienie w DB_BAZA: jaki % z nich jest na pietrze zgodnym z segmentem.
+-- Segment -> pietro: IS 0-40, PF 41-200, MM 201-500, Strategic 4001+,
+-- pozostale CORPORATE 501-4000, SMB bez segmentu 0-40 (MATRYCA_ZATRUDNIENIA).
+-- =====================================================================
+
+-- === D25 Segment obecny x pietro wg DB_BAZA (klienci ze znanym zatrudnieniem, poza Public)
+WITH linie AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
+           til.SOLDTO_NUMBER,
+           til.SALES_AMOUNT
+    FROM   POLAND.T_INVOICE_LINE til
+    JOIN   POLAND.T_PAYER tp
+           ON  tp.PAYER_NUMBER = til.PAYER_NUMBER
+           AND tp.COUNTRY_CODE = til.COUNTRY_CODE
+    WHERE  til.COUNTRY_CODE        = 'PL'
+      AND  til.BUSINESS_SCOPE_FLAG = 'Y'
+      AND  NVL(til.CANCELLED_FLAG, 'N')   <> 'Y'
+      AND  NVL(til.DL_DELETION_FLAG, 'N') <> 'Y'
+      AND  til.INVOICE_DATE >= ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -12)
+      AND  til.INVOICE_DATE <  TRUNC(SYSDATE, 'MM')
+),
+soldto AS (
+    SELECT NIP, SOLDTO_NUMBER, SUM(SALES_AMOUNT) AS SALES
+    FROM   linie
+    WHERE  NIP IS NOT NULL
+    GROUP  BY NIP, SOLDTO_NUMBER
+),
+nip AS (
+    SELECT NIP,
+           SUM(SALES)                                                       AS SALES,
+           MAX(SOLDTO_NUMBER) KEEP (DENSE_RANK LAST ORDER BY SALES NULLS FIRST) AS SOLDTO_GLOWNY
+    FROM   soldto
+    GROUP  BY NIP
+    HAVING SUM(SALES) > 0
+),
+tot AS (
+    SELECT SUM(SALES) AS SALES_ALL FROM nip
+),
+area_seg AS (
+    SELECT AREA_CODE, MAX(SEGMENT) AS SEGMENT
+    FROM   WORK_POLAND.T_KOD_POCZTOWY_OPIEKUN
+    WHERE  SEGMENT IS NOT NULL
+    GROUP  BY AREA_CODE
+),
+seg AS (
+    SELECT n.NIP, n.SALES,
+           COALESCE(ts.NATIONAL_LEADER_NUMBER, ts.SOLDTO_NUMBER)            AS TOP_LEVEL,
+           CASE
+               WHEN ts.SALES_FORCE_TYPE_CODE = 'CORPORATE' THEN
+                   CASE WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%STRATEG%'             THEN 'STRATEGIC'
+                        WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%K' || CHR(38) || 'N%' THEN 'K' || CHR(38) || 'N'
+                        WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%INTERNAT%'            THEN 'INTERNATIONAL'
+                        WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%PUBLI%'               THEN 'CA_PUBLIC'
+                        ELSE                                                                 'CA_INNE' END
+               WHEN ars.SEGMENT IN ('IS', 'PF', 'MM')       THEN ars.SEGMENT
+               ELSE                                              'SMB_INNE'
+           END                                                              AS SEGMENT_OBECNY
+    FROM   nip n
+    LEFT JOIN POLAND.T_SOLDTO ts
+           ON  ts.SOLDTO_NUMBER = n.SOLDTO_GLOWNY
+           AND ts.COUNTRY_CODE  = 'PL'
+    LEFT JOIN SHARED.T_SALES_FORCE_REGION sfr
+           ON  sfr.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+           AND sfr.COUNTRY_CODE            = 'PL'
+           AND sfr.LANGUAGE_CODE           = 'POLISH'
+    LEFT JOIN area_seg ars
+           ON  ars.AREA_CODE = ts.AREA_CODE
+),
+grp AS (
+    SELECT TOP_LEVEL, COUNT(*) AS NIP_W_GRUPIE FROM seg GROUP BY TOP_LEVEL
+),
+db AS (
+    SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
+           MAX(d.ZATRUDNIENIE)                                              AS ZATR
+    FROM   WORK_POLAND.DB_BAZA d
+    WHERE  d.ZATRUDNIENIE IS NOT NULL
+    GROUP  BY REGEXP_REPLACE(d.NIP, '[^0-9]', '')
+),
+kpp AS (
+    SELECT LPAD(TO_CHAR(NIP), 10, '0')                                      AS NIP,
+           MAX(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'))                         AS DZIAL_KPP
+    FROM   WORK_POLAND.T_KATALOG_PODMIOTOW_PUBLICZNYCH
+    WHERE  NIP IS NOT NULL AND KATEGORIA_PODMIOTU = 'PUBLIC' AND NVL(STATUS, 'ACTIVE') = 'ACTIVE'
+    GROUP  BY LPAD(TO_CHAR(NIP), 10, '0')
+),
+f AS (
+    SELECT s.SEGMENT_OBECNY, s.SALES,
+           CASE WHEN g.NIP_W_GRUPIE = 1 THEN '1 SAM' ELSE '2 W_GRUPIE' END  AS RODZAJ,
+           CASE WHEN db.ZATR <= 40 THEN 1 WHEN db.ZATR <= 200 THEN 2 WHEN db.ZATR <= 500 THEN 3 WHEN db.ZATR <= 4000 THEN 4 ELSE 5 END AS PIETRO_DB,
+           CASE s.SEGMENT_OBECNY WHEN 'IS' THEN 1 WHEN 'PF' THEN 2 WHEN 'MM' THEN 3
+                                 WHEN 'STRATEGIC' THEN 5 WHEN 'SMB_INNE' THEN 1 ELSE 4 END AS PIETRO_SEGMENT,
+           CASE WHEN (kpp.NIP IS NOT NULL
+                      OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
+                 AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP)
+                     IN ('84','85','86','87','88','90','91','92','93')
+                THEN 'T' ELSE 'N' END                                       AS FLAGA_PUBLIC
+    FROM   seg s
+    JOIN   grp g ON g.TOP_LEVEL = s.TOP_LEVEL
+    JOIN   db  ON db.NIP = s.NIP
+    LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP = s.NIP
+    LEFT JOIN kpp ON kpp.NIP = s.NIP
+)
+SELECT f.RODZAJ,
+       f.SEGMENT_OBECNY,
+       COUNT(*)                                                         AS KLIENCI_ZE_ZNANYM_ZATR,
+       ROUND(SUM(CASE WHEN f.PIETRO_DB = f.PIETRO_SEGMENT THEN 1 ELSE 0 END) / COUNT(*) * 100, 1)
+                                                                        AS ZGODNE_PCT,
+       ROUND(SUM(CASE WHEN ABS(f.PIETRO_DB - f.PIETRO_SEGMENT) <= 1 THEN 1 ELSE 0 END) / COUNT(*) * 100, 1)
+                                                                        AS ZGODNE_LUB_SASIEDNIE_PCT,
+       SUM(CASE WHEN f.PIETRO_DB = 1 THEN 1 ELSE 0 END)                 AS DB_0_40,
+       SUM(CASE WHEN f.PIETRO_DB = 2 THEN 1 ELSE 0 END)                 AS DB_41_200,
+       SUM(CASE WHEN f.PIETRO_DB = 3 THEN 1 ELSE 0 END)                 AS DB_201_500,
+       SUM(CASE WHEN f.PIETRO_DB = 4 THEN 1 ELSE 0 END)                 AS DB_501_4000,
+       SUM(CASE WHEN f.PIETRO_DB = 5 THEN 1 ELSE 0 END)                 AS DB_4001,
+       ROUND(SUM(f.SALES) / MAX(t.SALES_ALL) * 100, 2)                  AS PCT_SPRZEDAZY
+FROM   f
+CROSS JOIN tot t
+WHERE  f.FLAGA_PUBLIC = 'N'
+GROUP  BY f.RODZAJ, f.SEGMENT_OBECNY
+ORDER  BY f.RODZAJ, DECODE(f.SEGMENT_OBECNY, 'IS', 1, 'PF', 2, 'MM', 3, 'SMB_INNE', 4,
+                           'STRATEGIC', 6, 7), f.SEGMENT_OBECNY;

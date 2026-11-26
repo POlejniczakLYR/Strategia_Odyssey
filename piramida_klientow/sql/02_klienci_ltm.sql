@@ -8,6 +8,12 @@ SET DEFINE OFF;
 -- Jeden wiersz na NIP: sprzedaz i marza LTM, glowny platnik i glowny SOLDTO
 -- (najwieksza sprzedaz LTM w NIP), przypisanie w sprzedazy (typ, region)
 -- i flaga REGION_PUBLIC (czy ktorykolwiek SOLDTO jest w regionie "Public").
+-- SEGMENT_OBECNY i TOP_LEVEL glownego SOLDTO - do szacunku pietra klientow
+-- bez zatrudnienia w 03 (decyzja 2026-11-26):
+--   CORPORATE -> region: STRATEGIC / K&N / INTERNATIONAL / CA_PUBLIC / CA_INNE
+--   SMB       -> segment terytorium opiekuna (T_KOD_POCZTOWY_OPIEKUN po
+--                AREA_CODE): IS / PF / MM; brak -> SMB_INNE
+--   TOP_LEVEL = COALESCE(NATIONAL_LEADER_NUMBER, SOLDTO_NUMBER)
 --
 -- Mapowanie NIP-ow (T_ODY_MAPA_NIP, lista C w 04):
 --   grupa VAT  -> sprzedaz liczona na NIP spolki (NIP_DOCELOWY)
@@ -40,6 +46,8 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_KLIENT_LTM',
      SALES_FORCE_REGION_CODE  VARCHAR2(12),
      SALES_FORCE_REGION       VARCHAR2(400),
      REGION_PUBLIC            CHAR(1),
+     SEGMENT_OBECNY           VARCHAR2(20),
+     TOP_LEVEL                VARCHAR2(30),
      DATA_WCZYTANIA           DATE           DEFAULT SYSDATE');
 -- TYP_NIP      : NIP / GRUPA_VAT / ZAGRANICZNY / NIE_10_CYFR
 -- NIP_SAP      : NIP z T_PAYER (rozny od NIP dla grup VAT); przy kilku - najwieksza sprzedaz
@@ -56,7 +64,8 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_KLIENT_LTM',
 INSERT INTO WORK_POLAND.T_ODY_KLIENT_LTM
     (NIP, TYP_NIP, NIP_SAP, LICZBA_NIP_SAP, LTM_OD, LTM_DO, SALES_LTM, MARGIN_LTM,
      PAYER_GLOWNY, LICZBA_SOLDTO, SOLDTO_GLOWNY,
-     SALES_FORCE_TYPE_CODE, SALES_FORCE_REGION_CODE, SALES_FORCE_REGION, REGION_PUBLIC)
+     SALES_FORCE_TYPE_CODE, SALES_FORCE_REGION_CODE, SALES_FORCE_REGION, REGION_PUBLIC,
+     SEGMENT_OBECNY, TOP_LEVEL)
 WITH p AS (
     SELECT ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -12) AS LTM_OD,
            TRUNC(SYSDATE, 'MM')                  AS LTM_DO
@@ -79,6 +88,12 @@ linie0 AS (
       AND  NVL(til.DL_DELETION_FLAG, 'N') <> 'Y'
       AND  til.INVOICE_DATE >= p.LTM_OD
       AND  til.INVOICE_DATE <  p.LTM_DO
+),
+area_seg AS (                                  -- segment terytorium opiekuna (jak w Go2M)
+    SELECT AREA_CODE, MAX(SEGMENT) AS SEGMENT
+    FROM   WORK_POLAND.T_KOD_POCZTOWY_OPIEKUN
+    WHERE  SEGMENT IS NOT NULL
+    GROUP  BY AREA_CODE
 ),
 mapa AS (
     SELECT NIP_SAP, MAX(NIP_DOCELOWY) AS NIP_DOCELOWY, MAX(TYP) AS TYP
@@ -148,7 +163,18 @@ SELECT n.NIP,
        ts.SALES_FORCE_TYPE_CODE,
        ts.SALES_FORCE_REGION_CODE,
        sfr.SALES_FORCE_REGION,
-       g.REGION_PUBLIC
+       g.REGION_PUBLIC,
+       CASE
+           WHEN ts.SALES_FORCE_TYPE_CODE = 'CORPORATE' THEN
+               CASE WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%STRATEG%'                 THEN 'STRATEGIC'
+                    WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%K' || CHR(38) || 'N%'     THEN 'K' || CHR(38) || 'N'
+                    WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%INTERNAT%'                THEN 'INTERNATIONAL'
+                    WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%PUBLI%'                   THEN 'CA_PUBLIC'
+                    ELSE                                                                     'CA_INNE' END
+           WHEN ars.SEGMENT IN ('IS', 'PF', 'MM')       THEN ars.SEGMENT
+           ELSE                                              'SMB_INNE'
+       END                                                              AS SEGMENT_OBECNY,
+       COALESCE(ts.NATIONAL_LEADER_NUMBER, ts.SOLDTO_NUMBER)            AS TOP_LEVEL
 FROM   nip n
 CROSS JOIN p
 JOIN   glowny g   ON g.NIP  = n.NIP
@@ -161,6 +187,8 @@ LEFT JOIN SHARED.T_SALES_FORCE_REGION sfr
        ON  sfr.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
        AND sfr.COUNTRY_CODE            = 'PL'
        AND sfr.LANGUAGE_CODE           = 'POLISH'
+LEFT JOIN area_seg ars
+       ON  ars.AREA_CODE = ts.AREA_CODE
 WHERE  n.SALES_LTM > 0;                         -- aktywny = dodatnia sprzedaz netto
 
 COMMIT;
@@ -176,6 +204,17 @@ SELECT TYP_NIP,
        MIN(LTM_OD) AS LTM_OD, MIN(LTM_DO) AS LTM_DO
 FROM   WORK_POLAND.T_ODY_KLIENT_LTM
 GROUP  BY TYP_NIP
+ORDER  BY LICZBA_NIP DESC;
+
+
+-- ---------------------------------------------------------------------
+-- KONTROLA 1b: klienci wg segmentu obecnego (glowny SOLDTO)
+-- ---------------------------------------------------------------------
+SELECT SEGMENT_OBECNY,
+       COUNT(*)                                                             AS LICZBA_NIP,
+       ROUND(RATIO_TO_REPORT(SUM(SALES_LTM)) OVER () * 100, 2)              AS PCT_SPRZEDAZY
+FROM   WORK_POLAND.T_ODY_KLIENT_LTM
+GROUP  BY SEGMENT_OBECNY
 ORDER  BY LICZBA_NIP DESC;
 
 
