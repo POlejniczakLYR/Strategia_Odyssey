@@ -171,6 +171,43 @@ Wnioski z diagnostyki:
   więc penetracja jest liczona spójnie. Różnicę podajemy jako zakres niepewności
   piętra 41–200.
 
+## Wstępny wynik: nasi klienci i penetracja (diagnostyka D12–D18, 2026-11-26)
+
+Klienci = NIP-y z dodatnią sprzedażą w ostatnich 12 miesiącach: 29 976 NIP-ów,
+99,8% sprzedaży. Sprzedaż bez NIP-u albo z NIP-em innym niż 10 cyfr to 0,2%.
+`T_CEIDG_GUS` obejmuje 98,7% klientów, `DB_BAZA` 49% klientów, ale 80% sprzedaży.
+
+| Piętro | Rynek: firmy | U nas: firmy | Penetracja | Rynek: pracujący | U nas: pracujący | Pokrycie pracujących | % sprzedaży |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 0–40 | 2 872 767 | 6 292 | 0,22% | 5 674 623 | 108 778 | 1,9% | 7,3 |
+| 41–200 | 18 699 | 5 271 | 28,2% | 1 807 227 | 488 974 | 27,1% | 14,6 |
+| 201–500 | 3 390 | 1 442 | 42,5% | 1 171 946 | 443 900 | 37,9% | 12,4 |
+| 501–4000 | 1 533 | 769 | 50,2% | 1 740 517 | 911 094 | 52,3% | 26,6 |
+| 4001+ | 92 | 70 | 76,1% | 932 929 | 667 504 | 71,5% | 15,8 |
+| Public | 62 256 | 2 143 | 3,4%* | 2 805 762 | 271 614** | 9,7%** | 5,9 |
+| Nieprzypisane | – | 14 005 | – | – | – | – | 17,5 |
+
+\* GUS liczy podmioty (każdą szkołę), my liczymy NIP-y (szkoły płacą zwykle
+przez NIP gminy): 1 681 z 2 143 klientów Public to dział 84 (gminy, urzędy,
+związki gmin), 5,1% sprzedaży.
+\*\* Zatrudnienie znamy tylko dla 937 z 2 143 klientów Public.
+
+Wnioski:
+
+- **Nieprzypisani (17,5% sprzedaży)**: średnia sprzedaż na NIP jak na piętrze
+  0–40, a `DB_BAZA` obejmuje około 100% firm 10+. Hipoteza: to głównie
+  mikrofirmy i osoby fizyczne. Sprawdzają to D19–D20. Jeśli się potwierdzi,
+  przypisujemy ich do piętra 0–40 jako „0–9 (brak w `DB_BAZA`)”. Wtedy
+  penetracja 0–40 wynosi 0,71%.
+- **Public a organizacja sprzedaży:** region sprzedaży „Public” (351 NIP-ów,
+  4,8% sprzedaży) to nie to samo co Public w wariancie B. Region obsługuje też
+  spółki państwowe (energetyka, banki, transport, porty). Klienci sektora
+  publicznego spoza wariantu B to 884 NIP-y i 5,8% sprzedaży. W wariancie B są
+  w piętrach według wielkości. Z kolei 1 811 klientów Public (3% sprzedaży)
+  obsługuje SMB.
+- **Centra usług wspólnych (dział 69)**: wśród naszych klientów brak albo
+  < 0,01% sprzedaży, więc nie zmieniamy definicji Public.
+
 ## SQL w HALO: kolejność uruchamiania
 
 **Najpierw diagnostyka:** `sql/diagnostyka_przed_startem.sql` (same SELECT-y,
