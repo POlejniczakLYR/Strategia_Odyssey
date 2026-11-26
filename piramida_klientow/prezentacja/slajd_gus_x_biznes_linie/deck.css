@@ -138,11 +138,7 @@ body {
   color: var(--ink);
 }
 
-/* komorki rynku na dwa wiersze: 0-9 (JDG + inne) i 250+ (250-999 + 1000+) */
-.r09-firmy  { grid-column: 2 / 3;   grid-row: 2 / 4; align-self: center; }
-.r09-prac   { grid-column: 3 / 4;   grid-row: 2 / 4; align-self: center; }
-.r09-pport  { grid-column: 14 / 15; grid-row: 2 / 4; align-self: center; }
-.r09-pakt   { grid-column: 15 / 16; grid-row: 2 / 4; align-self: center; }
+/* GUS podaje firmy aktywne tylko dla 250+: komorki na dwa wiersze */
 .r250-firmy { grid-column: 2 / 3;   grid-row: 6 / 8; align-self: center; }
 .r250-pport { grid-column: 14 / 15; grid-row: 6 / 8; align-self: center; }
 .r250-pakt  { grid-column: 15 / 16; grid-row: 6 / 8; align-self: center; }
