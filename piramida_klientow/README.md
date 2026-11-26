@@ -216,6 +216,10 @@ Wnioski:
     200 największych → `DO_UZUPELNIENIA` (lista B w `sql/04`, zatrudnienie z eKRS);
     grupy VAT → mapowanie na NIP spółki (lista C, `T_ODY_MAPA_NIP`); NIP-y
     zagraniczne → osobny wiersz „poza rynkiem PL” (piętro 98);
+  - **do sprawdzenia: TOP_LEVEL** (lider grupy zakupowej) jako podpowiedź dla
+    nieprzypisanych. Jeśli NIP-y ze znanym zatrudnieniem w tej samej grupie są
+    w ≥ 70% na jednym piętrze, nieprzypisany NIP dostaje to piętro jako szacunek.
+    Nie przypisujemy NIP-owi zatrudnienia całej grupy (D23–D24);
   - 30 największych nieprzypisanych to 27% ich sprzedaży.
   - Do wyjaśnienia: czy wśród klientów są odsprzedawcy (np. hurtownie z działu
     46), których nie powinno być w piramidzie.

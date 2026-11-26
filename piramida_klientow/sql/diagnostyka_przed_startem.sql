@@ -1011,3 +1011,254 @@ FETCH FIRST 25 ROWS ONLY;
 
 -- (D23-D26 o zatrudnieniu z BvD usuniete - decyzja 2026-11-26: BvD to slabe
 --  zrodlo, nie uzywamy.)
+
+
+-- =====================================================================
+-- H. TOP_LEVEL (lider grupy zakupowej: COALESCE(NATIONAL_LEADER_NUMBER,
+-- SOLDTO_NUMBER)) - czy pomoze oszacowac pietro NIEPRZYPISANYCH?
+-- Pomysl: jezeli NIP-y z tej samej grupy, ktore maja zatrudnienie, sa
+-- w wiekszosci na jednym pietrze (np. siec franczyzowa - wszystkie 0-40),
+-- nieprzypisany NIP z tej grupy dostaje to pietro jako szacunek.
+-- NIE przypisujemy NIP-owi zatrudnienia calej grupy (GUS liczy spolki).
+-- =====================================================================
+
+-- === D23 NIEPRZYPISANI wg rodzaju grupy TOP_LEVEL (+ najczestsze pietro w grupie)
+WITH linie AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
+           til.SOLDTO_NUMBER,
+           til.SALES_AMOUNT
+    FROM   POLAND.T_INVOICE_LINE til
+    JOIN   POLAND.T_PAYER tp
+           ON  tp.PAYER_NUMBER = til.PAYER_NUMBER
+           AND tp.COUNTRY_CODE = til.COUNTRY_CODE
+    WHERE  til.COUNTRY_CODE        = 'PL'
+      AND  til.BUSINESS_SCOPE_FLAG = 'Y'
+      AND  NVL(til.CANCELLED_FLAG, 'N')   <> 'Y'
+      AND  NVL(til.DL_DELETION_FLAG, 'N') <> 'Y'
+      AND  til.INVOICE_DATE >= ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -12)
+      AND  til.INVOICE_DATE <  TRUNC(SYSDATE, 'MM')
+),
+nip AS (
+    SELECT NIP, SUM(SALES_AMOUNT) AS SALES
+    FROM   linie
+    WHERE  NIP IS NOT NULL
+    GROUP  BY NIP
+    HAVING SUM(SALES_AMOUNT) > 0
+),
+tot AS (
+    SELECT SUM(SALES) AS SALES_ALL FROM nip
+),
+nip_top AS (                                    -- TOP_LEVEL glownego SOLDTO NIP-u
+    SELECT s.NIP,
+           MAX(COALESCE(ts.NATIONAL_LEADER_NUMBER, s.SOLDTO_NUMBER))
+               KEEP (DENSE_RANK LAST ORDER BY s.SALES NULLS FIRST)           AS TOP_LEVEL
+    FROM  (SELECT NIP, SOLDTO_NUMBER, SUM(SALES_AMOUNT) AS SALES
+           FROM   linie
+           WHERE  NIP IS NOT NULL
+           GROUP  BY NIP, SOLDTO_NUMBER) s
+    LEFT JOIN POLAND.T_SOLDTO ts
+           ON  ts.SOLDTO_NUMBER = s.SOLDTO_NUMBER
+           AND ts.COUNTRY_CODE  = 'PL'
+    GROUP  BY s.NIP
+),
+db AS (
+    SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
+           MAX(d.ZATRUDNIENIE)                                              AS ZATR
+    FROM   WORK_POLAND.DB_BAZA d
+    WHERE  d.ZATRUDNIENIE IS NOT NULL
+    GROUP  BY REGEXP_REPLACE(d.NIP, '[^0-9]', '')
+),
+kpp AS (
+    SELECT LPAD(TO_CHAR(NIP), 10, '0')                                      AS NIP,
+           MAX(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'))                         AS DZIAL_KPP
+    FROM   WORK_POLAND.T_KATALOG_PODMIOTOW_PUBLICZNYCH
+    WHERE  NIP IS NOT NULL AND KATEGORIA_PODMIOTU = 'PUBLIC' AND NVL(STATUS, 'ACTIVE') = 'ACTIVE'
+    GROUP  BY LPAD(TO_CHAR(NIP), 10, '0')
+),
+f AS (                                          -- aktywni klienci (10-cyfrowy NIP, poza Public)
+    SELECT n.NIP, n.SALES, t.TOP_LEVEL, db.ZATR,
+           CASE WHEN db.ZATR IS NULL THEN NULL WHEN db.ZATR <= 40 THEN 1 WHEN db.ZATR <= 200 THEN 2 WHEN db.ZATR <= 500 THEN 3 WHEN db.ZATR <= 4000 THEN 4 ELSE 5 END AS PIETRO,
+           CASE WHEN cg.NIP IS NULL THEN 'BRAK_W_CEIDG'
+                WHEN cg.TYP_PODMIOTU = 'F' THEN 'OSOBA_FIZ'
+                ELSE 'SPOLKA' END                                           AS TYP
+    FROM   nip n
+    JOIN   nip_top t ON t.NIP = n.NIP
+    LEFT JOIN db  ON db.NIP  = n.NIP
+    LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP = n.NIP
+    LEFT JOIN kpp ON kpp.NIP = n.NIP
+    WHERE  LENGTH(n.NIP) = 10
+      AND  NOT ((kpp.NIP IS NOT NULL
+                 OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
+                AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP)
+                    IN ('84','85','86','87','88','90','91','92','93'))
+),
+grp AS (                                        -- grupa TOP_LEVEL: ile NIP-ow, ile ze znanym zatrudnieniem
+    SELECT TOP_LEVEL,
+           COUNT(*)                                                         AS NIP_W_GRUPIE,
+           COUNT(ZATR)                                                      AS NIP_Z_ZATR,
+           MEDIAN(ZATR)                                                     AS MEDIANA_ZATR
+    FROM   f
+    GROUP  BY TOP_LEVEL
+),
+moda AS (                                       -- najczestsze pietro wsrod NIP-ow ze znanym zatrudnieniem
+    SELECT TOP_LEVEL, PIETRO, UDZIAL
+    FROM  (SELECT TOP_LEVEL, PIETRO,
+                  CNT / SUM(CNT) OVER (PARTITION BY TOP_LEVEL)              AS UDZIAL,
+                  ROW_NUMBER() OVER (PARTITION BY TOP_LEVEL ORDER BY CNT DESC, PIETRO) AS RN
+           FROM  (SELECT TOP_LEVEL, PIETRO, COUNT(*) AS CNT
+                  FROM   f
+                  WHERE  ZATR IS NOT NULL
+                  GROUP  BY TOP_LEVEL, PIETRO))
+    WHERE  RN = 1
+),
+u AS (                                          -- NIEPRZYPISANI (bez zatrudnienia) z opisem ich grupy
+    SELECT f.NIP, f.SALES, f.TYP, f.TOP_LEVEL,
+           g.NIP_W_GRUPIE, g.NIP_Z_ZATR, g.MEDIANA_ZATR,
+           m.PIETRO AS PIETRO_MODA, m.UDZIAL AS UDZIAL_MODY,
+           CASE WHEN g.NIP_W_GRUPIE = 1                  THEN '1 SAM (grupa = 1 NIP)'
+                WHEN g.NIP_Z_ZATR = 0                    THEN '2 GRUPA BEZ DANYCH'
+                WHEN g.NIP_Z_ZATR >= 2 AND m.UDZIAL >= 0.7 THEN '3 GRUPA JEDNORODNA (>=70% w 1 pietrze)'
+                ELSE                                          '4 GRUPA ROZNORODNA / 1 ZNANY' END AS KLASA
+    FROM   f
+    JOIN   grp g ON g.TOP_LEVEL = f.TOP_LEVEL
+    LEFT JOIN moda m ON m.TOP_LEVEL = f.TOP_LEVEL
+    WHERE  f.ZATR IS NULL
+)
+SELECT u.KLASA,
+       u.TYP,
+       COUNT(*)                                                         AS KLIENCI,
+       ROUND(SUM(u.SALES) / MAX(t.SALES_ALL) * 100, 2)                  AS PCT_SPRZEDAZY,
+       SUM(CASE WHEN u.PIETRO_MODA = 1 THEN 1 ELSE 0 END)               AS MODA_0_40,
+       SUM(CASE WHEN u.PIETRO_MODA = 2 THEN 1 ELSE 0 END)               AS MODA_41_200,
+       SUM(CASE WHEN u.PIETRO_MODA = 3 THEN 1 ELSE 0 END)               AS MODA_201_500,
+       SUM(CASE WHEN u.PIETRO_MODA = 4 THEN 1 ELSE 0 END)               AS MODA_501_4000,
+       SUM(CASE WHEN u.PIETRO_MODA = 5 THEN 1 ELSE 0 END)               AS MODA_4001
+FROM   u
+CROSS JOIN tot t
+GROUP  BY u.KLASA, u.TYP
+ORDER  BY u.KLASA, u.TYP;
+
+
+-- === D24 Grupy TOP_LEVEL z najwieksza sprzedaza NIEPRZYPISANYCH (top 30)
+-- Czy to grupy kapitalowe (spolki roznej wielkosci) czy sieci / konsorcja
+-- (podobne, male firmy)? Nazwa lidera z T_ACCOUNT.
+WITH linie AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
+           til.SOLDTO_NUMBER,
+           til.SALES_AMOUNT
+    FROM   POLAND.T_INVOICE_LINE til
+    JOIN   POLAND.T_PAYER tp
+           ON  tp.PAYER_NUMBER = til.PAYER_NUMBER
+           AND tp.COUNTRY_CODE = til.COUNTRY_CODE
+    WHERE  til.COUNTRY_CODE        = 'PL'
+      AND  til.BUSINESS_SCOPE_FLAG = 'Y'
+      AND  NVL(til.CANCELLED_FLAG, 'N')   <> 'Y'
+      AND  NVL(til.DL_DELETION_FLAG, 'N') <> 'Y'
+      AND  til.INVOICE_DATE >= ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -12)
+      AND  til.INVOICE_DATE <  TRUNC(SYSDATE, 'MM')
+),
+nip AS (
+    SELECT NIP, SUM(SALES_AMOUNT) AS SALES
+    FROM   linie
+    WHERE  NIP IS NOT NULL
+    GROUP  BY NIP
+    HAVING SUM(SALES_AMOUNT) > 0
+),
+tot AS (
+    SELECT SUM(SALES) AS SALES_ALL FROM nip
+),
+nip_top AS (                                    -- TOP_LEVEL glownego SOLDTO NIP-u
+    SELECT s.NIP,
+           MAX(COALESCE(ts.NATIONAL_LEADER_NUMBER, s.SOLDTO_NUMBER))
+               KEEP (DENSE_RANK LAST ORDER BY s.SALES NULLS FIRST)           AS TOP_LEVEL
+    FROM  (SELECT NIP, SOLDTO_NUMBER, SUM(SALES_AMOUNT) AS SALES
+           FROM   linie
+           WHERE  NIP IS NOT NULL
+           GROUP  BY NIP, SOLDTO_NUMBER) s
+    LEFT JOIN POLAND.T_SOLDTO ts
+           ON  ts.SOLDTO_NUMBER = s.SOLDTO_NUMBER
+           AND ts.COUNTRY_CODE  = 'PL'
+    GROUP  BY s.NIP
+),
+db AS (
+    SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
+           MAX(d.ZATRUDNIENIE)                                              AS ZATR
+    FROM   WORK_POLAND.DB_BAZA d
+    WHERE  d.ZATRUDNIENIE IS NOT NULL
+    GROUP  BY REGEXP_REPLACE(d.NIP, '[^0-9]', '')
+),
+kpp AS (
+    SELECT LPAD(TO_CHAR(NIP), 10, '0')                                      AS NIP,
+           MAX(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'))                         AS DZIAL_KPP
+    FROM   WORK_POLAND.T_KATALOG_PODMIOTOW_PUBLICZNYCH
+    WHERE  NIP IS NOT NULL AND KATEGORIA_PODMIOTU = 'PUBLIC' AND NVL(STATUS, 'ACTIVE') = 'ACTIVE'
+    GROUP  BY LPAD(TO_CHAR(NIP), 10, '0')
+),
+f AS (                                          -- aktywni klienci (10-cyfrowy NIP, poza Public)
+    SELECT n.NIP, n.SALES, t.TOP_LEVEL, db.ZATR,
+           CASE WHEN db.ZATR IS NULL THEN NULL WHEN db.ZATR <= 40 THEN 1 WHEN db.ZATR <= 200 THEN 2 WHEN db.ZATR <= 500 THEN 3 WHEN db.ZATR <= 4000 THEN 4 ELSE 5 END AS PIETRO,
+           CASE WHEN cg.NIP IS NULL THEN 'BRAK_W_CEIDG'
+                WHEN cg.TYP_PODMIOTU = 'F' THEN 'OSOBA_FIZ'
+                ELSE 'SPOLKA' END                                           AS TYP
+    FROM   nip n
+    JOIN   nip_top t ON t.NIP = n.NIP
+    LEFT JOIN db  ON db.NIP  = n.NIP
+    LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP = n.NIP
+    LEFT JOIN kpp ON kpp.NIP = n.NIP
+    WHERE  LENGTH(n.NIP) = 10
+      AND  NOT ((kpp.NIP IS NOT NULL
+                 OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
+                AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP)
+                    IN ('84','85','86','87','88','90','91','92','93'))
+),
+grp AS (                                        -- grupa TOP_LEVEL: ile NIP-ow, ile ze znanym zatrudnieniem
+    SELECT TOP_LEVEL,
+           COUNT(*)                                                         AS NIP_W_GRUPIE,
+           COUNT(ZATR)                                                      AS NIP_Z_ZATR,
+           MEDIAN(ZATR)                                                     AS MEDIANA_ZATR
+    FROM   f
+    GROUP  BY TOP_LEVEL
+),
+moda AS (                                       -- najczestsze pietro wsrod NIP-ow ze znanym zatrudnieniem
+    SELECT TOP_LEVEL, PIETRO, UDZIAL
+    FROM  (SELECT TOP_LEVEL, PIETRO,
+                  CNT / SUM(CNT) OVER (PARTITION BY TOP_LEVEL)              AS UDZIAL,
+                  ROW_NUMBER() OVER (PARTITION BY TOP_LEVEL ORDER BY CNT DESC, PIETRO) AS RN
+           FROM  (SELECT TOP_LEVEL, PIETRO, COUNT(*) AS CNT
+                  FROM   f
+                  WHERE  ZATR IS NOT NULL
+                  GROUP  BY TOP_LEVEL, PIETRO))
+    WHERE  RN = 1
+),
+u AS (                                          -- NIEPRZYPISANI (bez zatrudnienia) z opisem ich grupy
+    SELECT f.NIP, f.SALES, f.TYP, f.TOP_LEVEL,
+           g.NIP_W_GRUPIE, g.NIP_Z_ZATR, g.MEDIANA_ZATR,
+           m.PIETRO AS PIETRO_MODA, m.UDZIAL AS UDZIAL_MODY,
+           CASE WHEN g.NIP_W_GRUPIE = 1                  THEN '1 SAM (grupa = 1 NIP)'
+                WHEN g.NIP_Z_ZATR = 0                    THEN '2 GRUPA BEZ DANYCH'
+                WHEN g.NIP_Z_ZATR >= 2 AND m.UDZIAL >= 0.7 THEN '3 GRUPA JEDNORODNA (>=70% w 1 pietrze)'
+                ELSE                                          '4 GRUPA ROZNORODNA / 1 ZNANY' END AS KLASA
+    FROM   f
+    JOIN   grp g ON g.TOP_LEVEL = f.TOP_LEVEL
+    LEFT JOIN moda m ON m.TOP_LEVEL = f.TOP_LEVEL
+    WHERE  f.ZATR IS NULL
+)
+SELECT u.TOP_LEVEL,
+       SUBSTR(MAX(ta.NAME), 1, 50)                                      AS LIDER_GRUPY,
+       MAX(u.NIP_W_GRUPIE)                                              AS NIP_W_GRUPIE,
+       MAX(u.NIP_Z_ZATR)                                                AS NIP_Z_ZATR,
+       COUNT(*)                                                         AS NIP_BEZ_ZATR,
+       SUM(CASE WHEN u.TYP = 'BRAK_W_CEIDG' THEN 1 ELSE 0 END)          AS W_TYM_BRAK_W_CEIDG,
+       MAX(u.MEDIANA_ZATR)                                              AS MEDIANA_ZATR_ZNANYCH,
+       MAX(u.PIETRO_MODA)                                               AS PIETRO_MODA,
+       ROUND(MAX(u.UDZIAL_MODY) * 100)                                  AS UDZIAL_MODY_PCT,
+       ROUND(SUM(u.SALES) / MAX(t.SALES_ALL) * 100, 3)                  AS PCT_SPRZEDAZY_NIEPRZYP
+FROM   u
+CROSS JOIN tot t
+LEFT JOIN POLAND.T_ACCOUNT ta
+       ON  ta.ACCOUNT_NUMBER = u.TOP_LEVEL
+       AND ta.COUNTRY_CODE   = 'PL'
+WHERE  u.NIP_W_GRUPIE > 1
+GROUP  BY u.TOP_LEVEL
+ORDER  BY SUM(u.SALES) DESC
+FETCH FIRST 30 ROWS ONLY;
