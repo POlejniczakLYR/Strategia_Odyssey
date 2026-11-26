@@ -136,6 +136,13 @@ tylko proporcje, więc suma pięter = suma GUS (sprawdza to kontrola w `sql/06`)
 
 ## SQL w HALO: kolejność uruchamiania
 
+**Najpierw diagnostyka:** `sql/diagnostyka_przed_startem.sql` (same SELECT-y,
+nic nie tworzy). Sprawdza słowniki (Katalog Podmiotów Publicznych, `T_CEIDG_GUS`,
+`DB_BAZA`), pokrycie rynku przez `DB_BAZA` w porównaniu z GUS, proporcje podziału klas
+GUS na piętra, duże firmy (4001+) i wstępną piramidę naszych klientów.
+Uruchamiamy całość przez F5 w SQL Developerze (wynik w CSV). Sprzedaż
+jest tylko jako udział %. Dopiero gdy wyniki mają sens, budujemy tabele `00`–`06`.
+
 | Plik | Co robi | Tabela |
 |---|---|---|
 | `sql/00_setup.sql` | Progi pięter, tabela korekt, tabela na dane GUS (jednorazowo) | `T_ODY_PIRAMIDA_PROGI`, `T_ODY_KOREKTA_FIRMY`, `T_ODY_RYNEK_GUS` |
