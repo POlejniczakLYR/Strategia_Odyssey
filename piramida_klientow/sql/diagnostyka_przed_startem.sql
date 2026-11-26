@@ -1087,10 +1087,11 @@ f AS (                                          -- aktywni klienci (10-cyfrowy N
     LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP = n.NIP
     LEFT JOIN kpp ON kpp.NIP = n.NIP
     WHERE  LENGTH(n.NIP) = 10
-      AND  NOT ((kpp.NIP IS NOT NULL
+      AND  CASE WHEN (kpp.NIP IS NOT NULL
                  OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                 AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP)
-                    IN ('84','85','86','87','88','90','91','92','93'))
+                    IN ('84','85','86','87','88','90','91','92','93')
+                THEN 'T' ELSE 'N' END = 'N'     -- CASE, nie NOT(...): NULL nie moze wycinac wierszy
 ),
 grp AS (                                        -- grupa TOP_LEVEL: ile NIP-ow, ile ze znanym zatrudnieniem
     SELECT TOP_LEVEL,
@@ -1206,10 +1207,11 @@ f AS (                                          -- aktywni klienci (10-cyfrowy N
     LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP = n.NIP
     LEFT JOIN kpp ON kpp.NIP = n.NIP
     WHERE  LENGTH(n.NIP) = 10
-      AND  NOT ((kpp.NIP IS NOT NULL
+      AND  CASE WHEN (kpp.NIP IS NOT NULL
                  OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                 AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP)
-                    IN ('84','85','86','87','88','90','91','92','93'))
+                    IN ('84','85','86','87','88','90','91','92','93')
+                THEN 'T' ELSE 'N' END = 'N'     -- CASE, nie NOT(...): NULL nie moze wycinac wierszy
 ),
 grp AS (                                        -- grupa TOP_LEVEL: ile NIP-ow, ile ze znanym zatrudnieniem
     SELECT TOP_LEVEL,
