@@ -189,3 +189,14 @@ body {
   color: var(--muted);
   margin: 0 0 4px;
 }
+
+.port {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.port-c {
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+}
