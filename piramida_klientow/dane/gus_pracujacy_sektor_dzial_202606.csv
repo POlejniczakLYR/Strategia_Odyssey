@@ -1,0 +1,111 @@
+OKRES;POZIOM;SEKCJA_PKD;OPIS;OGOLEM;SEKTOR_PUBLICZNY;SEKTOR_PRYWATNY;PRYW_NAJEMNI;PRYW_WLASNY_RACHUNEK
+2026-06;OGOLEM;OGOLEM;O G Ó Ł E M;15114835;3535975;11578860;8394548;3153122
+2026-06;SEKCJA;A;Rolnictwo, leśnictwo, łowiectwo i rybactwo (A);1101977;29836;1072141;72799;994830
+2026-06;DZIAL;A;Uprawy rolne, chów i hodowla zwierząt, łowiectwo;1046253;5447;1040806;48506;987804
+2026-06;DZIAL;A;Leśnictwo i pozyskiwanie drewna;46579;24191;22388;16337;6047
+2026-06;DZIAL;A;Rybactwo;2466;198;2268;1734;532
+2026-06;DZIAL;A;Rolnictwo, leśnictwo, łowiectwo i rybactwo - dział nieustalony;6679;0;6679;6222;447
+2026-06;SEKCJA;B;Górnictwo i wydobywanie (B);119144;64265;54879;53698;1181
+2026-06;DZIAL;B;Wydobywanie węgla kamiennego i węgla brunatnego (lignitu);70971;59580;11391;11388;3
+2026-06;DZIAL;B;Pozostałe górnictwo i wydobywanie;20120;1312;18808;17973;835
+2026-06;DZIAL;B;Działalność usługowa wspomagająca górnictwo;13699;2910;10789;10470;319
+2026-06;SEKCJA;C;Przetwórstwo przemysłowe (C);2719366;50135;2669231;2495956;172572
+2026-06;DZIAL;C;Produkcja artykułów spożywczych;438932;2895;436037;423115;12636
+2026-06;DZIAL;C;Produkcja napojów;24433;10;24423;24198;224
+2026-06;DZIAL;C;Produkcja wyrobów tytoniowych;8071;0;8071;8071;0
+2026-06;DZIAL;C;Produkcja wyrobów tekstylnych;47577;;;;4183
+2026-06;DZIAL;C;Produkcja odzieży;49848;1811;48037;40357;7632
+2026-06;DZIAL;C;Produkcja skór i wyrobów skórzanych;11899;;;;1450
+2026-06;DZIAL;C;Produkcja wyrobów z drewna, korka, słomy i wikliny;119462;491;118971;105205;13566
+2026-06;DZIAL;C;Produkcja papieru i wyrobów z papieru;71486;0;71486;69877;1608
+2026-06;DZIAL;C;Poligrafia i reprodukcja zapisanych nośników informacji;48279;2566;45713;39672;6038
+2026-06;DZIAL;C;Produkcja koksu i produktów rafinacji ropy naftowej;18865;2742;16123;16104;19
+2026-06;DZIAL;C;Produkcja chemikaliów i wyrobów chemicznych;89545;6179;83366;82238;1126
+2026-06;DZIAL;C;Produkcja wyrobów farmaceutycznych;28557;911;27646;27593;53
+2026-06;DZIAL;C;Produkcja wyrobów z gumy i tworzyw sztucznych;227081;306;226775;221713;5045
+2026-06;DZIAL;C;Produkcja wyrobów z pozostałych mineralnych surowców niemetalicznych;138710;984;137726;129909;7801
+2026-06;DZIAL;C;Produkcja metali;65072;1633;63439;62790;645
+2026-06;DZIAL;C;Produkcja wyrobów z metali;366267;10399;355868;318207;37649
+2026-06;DZIAL;C;Produkcja komputerów, wyrobów elektronicznych i optycznych;66675;906;65769;64139;1626
+2026-06;DZIAL;C;Produkcja urządzeń elektrycznych;118975;766;118209;116979;1204
+2026-06;DZIAL;C;Produkcja maszyn i urządzeń;134151;710;133441;130564;2877
+2026-06;DZIAL;C;Produkcja pojazdów samochodowych, przyczep i naczep;193133;1018;192115;191325;782
+2026-06;DZIAL;C;Produkcja pozostałego sprzętu transportowego;61694;4078;57616;56451;1152
+2026-06;DZIAL;C;Produkcja mebli;180866;6;180860;160461;20397
+2026-06;DZIAL;C;Pozostała produkcja wyrobów;68327;340;67987;56182;11781
+2026-06;DZIAL;C;Naprawa, konserwacja i instalowanie maszyn i urządzeń;138363;11016;127347;96764;30563
+2026-06;DZIAL;C;Przetwórstwo przemysłowe - dział nieustalony;3098;0;3098;578;2515
+2026-06;SEKCJA;D;Wytwarzanie i zaopatrywanie w energię elektryczną, gaz, parę wodną i gorącą wodę  (D);113792;53049;60743;59637;1106
+2026-06;SEKCJA;E;"Dostawa wody; gospodarowanie ściekami i odpadami; rekultywacja  (E)";172591;106284;66307;62089;4212
+2026-06;DZIAL;E;Pobór, uzdatnianie i dostarczanie wody;22888;21511;1377;1195;182
+2026-06;DZIAL;E;Odprowadzanie i oczyszczanie ścieków;53434;46686;6748;5196;1552
+2026-06;DZIAL;E;"Gospodarka odpadami; odzysk surowców";92326;36835;55491;53223;2262
+2026-06;DZIAL;E;Rekultywacja;3855;1252;2603;2466;137
+2026-06;DZIAL;E;"Dostawa wody; gospodarowanie ściekami i odpadami; rekultywacja  - dział nieustalony";88;0;88;9;79
+2026-06;SEKCJA;F;Budownictwo (F);1065970;16998;1048972;701351;347557
+2026-06;DZIAL;F;Budowa budynków;277555;4845;272710;214395;58302
+2026-06;DZIAL;F;Budowa obiektów inżynierii lądowej i wodnej;186487;;;;18546
+2026-06;DZIAL;F;Roboty budowlane specjalistyczne;596759;3600;593159;326771;266360
+2026-06;DZIAL;F;Budownictwo - dział nieustalony;5169;;;;4349
+2026-06;SEKCJA;G;"Handel; naprawa pojazdów samochodowych  (G)";2134874;3296;2131578;1787376;344099
+2026-06;DZIAL;G;Handel hurtowy i detaliczny pojazdami samochodowymi oraz ich naprawa;296222;185;296037;211566;84466
+2026-06;DZIAL;G;Handel hurtowy;705857;1725;704132;629889;74204
+2026-06;DZIAL;G;Handel detaliczny;1126167;1386;1124781;944118;180604
+2026-06;DZIAL;G;"Handel; naprawa pojazdów samochodowych  - dział nieustalony";6628;0;6628;1803;4825
+2026-06;SEKCJA;H;Transport i gospodarka magazynowa (H);921114;201612;719502;594872;124617
+2026-06;DZIAL;H;Transport lądowy i rurociągowy;613541;92961;520580;421759;98809
+2026-06;DZIAL;H;Transport wodny;3164;373;2791;2097;694
+2026-06;DZIAL;H;Magazynowanie i działalność usługowa wspomagająca transport;218747;54859;163888;148282;15605
+2026-06;SEKCJA;I;Zakwaterowanie i gastronomia  (I);339119;6951;332168;270960;61179
+2026-06;DZIAL;I;Zakwaterowanie;88701;5187;83514;66815;16684
+2026-06;DZIAL;I;Gastronomia;249289;1764;247525;203948;43563
+2026-06;DZIAL;I;Zakwaterowanie i gastronomia   - dział nieustalony;1129;0;1129;197;932
+2026-06;SEKCJA;J;Informacja i komunikacja (J);552891;15645;537246;343773;193445
+2026-06;DZIAL;J;Działalność wydawnicza;31804;195;31609;28009;3593
+2026-06;DZIAL;J;Produkcja filmów, programów telewizyjnych i nagrań;20091;750;19341;6006;13329
+2026-06;DZIAL;J;Nadawanie programów ogólnodostępnych i abonamentowych;13112;5768;7344;7204;140
+2026-06;DZIAL;J;Telekomunikacja;47470;826;46644;42891;3753
+2026-06;DZIAL;J;Działalność związana z oprogramowaniem i doradztwo w zakresie informatyki;376903;6627;370276;205989;164273
+2026-06;DZIAL;J;Działalność usługowa w zakresie informacji;60552;1479;59073;53047;6025
+2026-06;DZIAL;J;Informacja i komunikacja - dział nieustalony;2959;0;2959;627;2332
+2026-06;SEKCJA;K;Działalność finansowa i ubezpieczeniowa (K);336531;45810;290721;247741;42952
+2026-06;DZIAL;K;Finansowa działalność usługowa;197999;37326;160673;155851;4811
+2026-06;DZIAL;K;Ubezpieczenia, reasekuracja i fundusze emerytalne;31917;7661;24256;23791;465
+2026-06;DZIAL;K;Działalność wspomagająca usługi finansowe oraz ubezpieczenia i fundusze emerytalne;105957;823;105134;67988;37129
+2026-06;DZIAL;K;Działalność finansowa i ubezpieczeniowa - dział nieustalony;658;0;658;111;547
+2026-06;SEKCJA;L;Obsługa rynku nieruchomości  (L);183054;32555;150499;112909;37572
+2026-06;SEKCJA;M;Działalność profesjonalna, naukowa i techniczna (M);850694;87431;763263;461335;301879
+2026-06;DZIAL;M;Działalność prawnicza, rachunkowo-księgowa i doradztwo podatkowe;268080;17485;250595;165443;85147
+2026-06;DZIAL;M;"Działalność firm centralnych; doradztwo w zarządzaniu";151542;8502;143040;92687;50338
+2026-06;DZIAL;M;"Działalność w zakresie architektury i inżynierii; badania i analizy techniczne";157312;4723;152589;91368;61215
+2026-06;DZIAL;M;Badania naukowe i prace rozwojowe;84338;55750;28588;26687;1901
+2026-06;DZIAL;M;Reklama, badanie rynku i opinii publicznej;79367;176;79191;48365;30817
+2026-06;DZIAL;M;Pozostała działalność profesjonalna, naukowa i techniczna;84335;608;83727;24659;59055
+2026-06;DZIAL;M;Działalność weterynaryjna;20568;187;20381;11138;9242
+2026-06;DZIAL;M;Działalność profesjonalna, naukowa i techniczna - dział nieustalony;5152;0;5152;988;4164
+2026-06;SEKCJA;N;Administrowanie i działalność wspierająca  (N);572598;13262;559336;466030;93287
+2026-06;DZIAL;N;Wynajem i dzierżawa;36804;82;36722;28227;8492
+2026-06;DZIAL;N;Działalność związana z zatrudnieniem;129513;2106;127407;124756;2651
+2026-06;DZIAL;N;Działalność związana z turystyką;22149;544;21605;15243;6361
+2026-06;DZIAL;N;Działalność detektywistyczna i ochroniarska;112443;449;111994;110518;1475
+2026-06;DZIAL;N;Utrzymanie porządku w budynkach i zagospodarowanie terenów zieleni;136413;7106;129307;97865;31436
+2026-06;DZIAL;N;"Administracyjna obsługa biura; wspomaganie działalności gospodarczej";133498;2975;130523;88966;41549
+2026-06;DZIAL;N;Administrowanie i działalność wspierająca  - dział nieustalony;1778;0;1778;455;1323
+2026-06;SEKCJA;O;"Administracja publiczna i obrona narodowa; obowiązkowe zabezpieczenia społeczne (O)";1082223;1080664;1559;1161;398
+2026-06;SEKCJA;P;Edukacja (P);1260157;1036310;223847;156569;67193
+2026-06;SEKCJA;Q;Opieka zdrowotna i pomoc społeczna (Q);1011142;563968;447174;247801;199353
+2026-06;DZIAL;Q;Opieka zdrowotna;786239;398462;387777;195729;192028
+2026-06;DZIAL;Q;Pomoc społeczna z zakwaterowaniem;79272;58511;20761;20148;613
+2026-06;DZIAL;Q;Pomoc społeczna bez zakwaterowania;142100;106995;35105;31373;3732
+2026-06;DZIAL;Q;Opieka zdrowotna i pomoc społeczna - dział nieustalony;3531;0;3531;551;2980
+2026-06;SEKCJA;R;Działalność związana z kulturą, rozrywką i rekreacją (R);176450;124820;51630;28204;23408
+2026-06;DZIAL;R;Działalność twórcza związana z kulturą i rozrywką;63240;48822;14418;3292;11118
+2026-06;DZIAL;R;Działalność bibliotek, archiwów, muzeów oraz pozostała działalność związana z kulturą;47882;;;;762
+2026-06;DZIAL;R;Działalność związana z grami losowymi i zakładami wzajemnymi;12188;;;;221
+2026-06;DZIAL;R;Działalność sportowa, rozrywkowa i rekreacyjna;52494;23833;28661;17857;10794
+2026-06;DZIAL;R;Działalność związana z kulturą, rozrywką i rekreacją - dział nieustalony;646;0;646;133;513
+2026-06;SEKCJA;S;Pozostała działalność usługowa (S)b;401148;3084;398064;230287;142282
+2026-06;DZIAL;S;Działalność organizacji członkowskich;129379;888;128491;119637;21
+2026-06;DZIAL;S;Naprawa i konserwacja komputerów i artykułów użytku osobistego i domowego;28551;383;28168;14299;13864
+2026-06;DZIAL;S;Pozostała  indywidualna działalność usługowa;223962;1813;222149;95823;126320
+2026-06;DZIAL;S;Pozostała działalność usługowa - dział nieustalony;19256;0;19256;528;2077
