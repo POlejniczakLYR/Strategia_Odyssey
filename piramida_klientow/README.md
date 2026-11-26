@@ -6,15 +6,19 @@ potwierdzamy w GUS.
 
 | # | Piętro | Zatrudnienie |
 |---|---|---|
-| 1 | 0–40 | 0–40 (mikrofirmy 0–9 pokazywane jako podwarstwa, do decyzji) |
+| 1 | 0–40 | 0–40 (dodatkowo podwarstwy 0–9 i 10–40) |
 | 2 | 41–200 | 41–200 |
 | 3 | 201–500 | 201–500 |
 | 4 | 501–4000 | 501–4000 |
 | 5 | 4001+ | powyżej 4000 |
-| 6 | Public | wydzielony z pięter 1–5 (wariant definicji do decyzji, niżej) |
+| 6 | Public | jeden blok, wariant B: instytucje publiczne (niżej) |
 
 Public odejmujemy z pięter 1–5 zarówno na rynku, jak i u nas, żeby nic nie
 liczyło się dwa razy.
+
+**Decyzje (2026-11-26):** Public = wariant B (sektor publiczny w działach
+PKD 84–88 i 90–93), Public jako jeden blok, „firma u nas” = NIP płatnika
+z dodatnią sprzedażą netto w ostatnich 12 zamkniętych miesiącach.
 
 ## Źródła danych
 
@@ -26,8 +30,9 @@ liczyło się dwa razy.
 | Pracujący i pracownicy najemni wg sekcji × wielkości podmiotu | jw., Tabl. 7 i 8 | `gus_pracujacy_sekcja_klasa_202606.csv` | Klasy 0–5, 6–9, 10–49, 50–249, 250–999, 1000+; bez podziału na sektor |
 | Pracujący ogółem miesięcznie, rolnicy indywidualni, MON/MSWiA | jw., Tabl. 1 | `gus_pracujacy_ogolem_miesiecznie_2026.csv` | Rolników indywidualnych (981 831) odejmujemy, nie są rynkiem |
 | **Szkielet rynku**: podmioty i pracujący w klasach GUS, Public wydzielony | wyliczenie | `szkielet_rynku_gus.csv` | Skrypt `gus/szkielet_rynku_gus.py`, 3 warianty Public |
-| Przedsiębiorstwa **aktywne** wg klas | GUS, Tablica 2, 2 kw. 2026 | repo Go2M: `gus_firmy_sekcje_pkd_2kw2026.csv` | Klasy 0–9 / 10–49 / 50–249 / 250+; bez sekcji O |
-| Nasi klienci, zatrudnienie | HALO: `T_INVOICE_LINE`, `T_PAYER`, `DB_BAZA`, `T_CEIDG_GUS` | `sql/` (do przygotowania) | Reguły joinów: repo BAZA_WIEDZY_HALO_RAG |
+| Przedsiębiorstwa **aktywne** wg klas | GUS, Tablica 2, 2 kw. 2026 | `gus_przedsiebiorstwa_aktywne_2kw2026.csv` (kopia z repo Go2M) | Klasy 0–9 / 10–49 / 50–249 / 250+; bez sekcji O |
+| **Dane rynku do HALO** (wariant B) | wyliczenie | `rynek_gus_do_halo.csv` → `sql/01_rynek_gus_dane.sql` | Generuje `gus/szkielet_rynku_gus.py` |
+| Nasi klienci, zatrudnienie, flaga Public | HALO: `T_INVOICE_LINE`, `T_PAYER`, `T_SOLDTO`, `DB_BAZA`, `T_CEIDG_GUS`, `T_KATALOG_PODMIOTOW_PUBLICZNYCH` | `sql/02`–`06` | Reguły joinów: repo BAZA_WIEDZY_HALO_RAG |
 
 Pliki źródłowe GUS leżą w `dane/zrodla/`. Odświeżenie po nowej publikacji:
 
@@ -97,25 +102,76 @@ Ograniczenia:
   z `DB_BAZA` z ręczną weryfikacją, kontrola z klasą 1000+ (521 podmiotów
   i 1,97 mln pracujących poza Public w wariancie B).
 
+## Jak przypisujemy dane GUS do naszych pięter
+
+GUS podaje firmy i pracujących w swoich klasach wielkości. Nasze progi
+(40 / 200 / 500 / 4000) przecinają te klasy, więc każdą klasę GUS dzielimy
+na co najwyżej dwa piętra (klasa 250+ z tablicy przedsiębiorstw aktywnych
+na trzy):
+
+| Klasa GUS | Trafia do pięter |
+|---|---|
+| 0–9 | 0–40 (w całości) |
+| 10–49 | 0–40 (10–40) + 41–200 (41–49) |
+| 50–249 | 41–200 (50–200) + 201–500 (201–249) |
+| 250–999 | 201–500 (250–500) + 501–4000 (501–999) |
+| 1000+ | 501–4000 (1000–4000) + 4001+ |
+| 250+ | 201–500 + 501–4000 + 4001+ |
+
+**Proporcje podziału bierzemy z `DB_BAZA`** (cały rynek, nie tylko nasi
+klienci). W każdej klasie GUS liczymy, jaki odsetek firm i jaki odsetek
+pracujących wypada w danym piętrze. Przykład (liczby umowne): jeśli w
+`DB_BAZA` 88% firm z klasy 10–49 ma do 40 osób, to 88% firm GUS z tej klasy
+trafia do piętra 0–40, a 12% do 41–200. Firmy GUS mnożymy przez odsetek
+firm, a pracujących GUS przez odsetek pracujących. Liczby pochodzą z GUS, z `DB_BAZA`
+tylko proporcje, więc suma pięter = suma GUS (sprawdza to kontrola w `sql/06`).
+
+- **Piętro 4001+** powstaje w całości z podziału klasy 1000+, bo GUS nie ma
+  progu 4000. Dlatego przed liczeniem proporcji przeglądamy listę dużych firm
+  (`sql/04`) i poprawiamy błędy `DB_BAZA` (zatrudnienie całej grupy przy
+  każdej spółce, stare dane) w tabeli korekt.
+- **Nasi klienci** nie wymagają podziału: każdy NIP trafia do piętra
+  bezpośrednio według swojego zatrudnienia.
+- **Public** to jeden blok, więc też bez podziału: liczby wprost z GUS.
+
+## SQL w HALO: kolejność uruchamiania
+
+| Plik | Co robi | Tabela |
+|---|---|---|
+| `sql/00_setup.sql` | Progi pięter, tabela korekt, tabela na dane GUS (jednorazowo) | `T_ODY_PIRAMIDA_PROGI`, `T_ODY_KOREKTA_FIRMY`, `T_ODY_RYNEK_GUS` |
+| `sql/01_rynek_gus_dane.sql` | INSERT-y danych GUS (plik generowany, wariant B) | `T_ODY_RYNEK_GUS` |
+| `sql/02_klienci_ltm.sql` | Nasi klienci: NIP z dodatnią sprzedażą w ostatnich 12 zamkniętych miesiącach, główny SOLDTO i jego region sprzedaży | `T_ODY_KLIENT_LTM` |
+| `sql/03_profil_firm.sql` | Profil każdej firmy (rynek z `DB_BAZA` + nasi klienci): zatrudnienie, PKD, sektor, flaga Public, piętro. Kontrole flagi Public | `T_ODY_FIRMA_PROFIL` |
+| `sql/04_lista_4001.sql` | Lista firm ≥ 3000 do ręcznej weryfikacji + porównanie z GUS 1000+. Poprawki → `T_ODY_KOREKTA_FIRMY` → ponownie `03` | – |
+| `sql/05_proporcje.sql` | Proporcje podziału klas GUS na piętra (z `DB_BAZA`) | `T_ODY_PROPORCJE` |
+| `sql/06_piramida.sql` | Piramida: rynek, nasi klienci, penetracja, pokrycie pracujących, sprzedaż; kontrole; podwarstwy 0–9 / 10–40 | `T_ODY_PIRAMIDA` |
+
+**Flaga Public (wariant B)** w `03`: NIP jest w Katalogu Podmiotów
+Publicznych albo ma w REGON formę własności 1xx (Skarb Państwa, państwowe
+osoby prawne, JST) **i** działa w działach PKD 84–88 / 90–93. Działy liczymy
+po dwóch pierwszych cyfrach PKD, bo w PKD 2007 i PKD 2025 są takie same
+(litery sekcji się różnią). Kontrole 2–5 w `03` porównują flagę z formą
+własności i z regionem sprzedaży (np. region PUBLIC bez flagi). Błędy
+poprawiamy regułą albo korektą `FLAGA_PUBLIC` w `T_ODY_KOREKTA_FIRMY`.
+
+SQL był sprawdzony parserem składni Oracle, ale nie był uruchamiany na HALO.
+Przy pierwszym uruchomieniu warto przejść kontrole po każdym kroku.
+
 ## Kolejność pracy
 
 1. ~~**Dane GUS**: REGON, pracujący, szkielet rynku w klasach GUS.~~ Gotowe.
-2. **Progi:** `T_ODY_PIRAMIDA_PROGI` (własna tabela; `MATRYCA_ZATRUDNIENIA` bez zmian).
-3. **Strona Lyreco:** aktywne NIP-y (sprzedaż > 0 w ostatnich 12 zamkniętych
-   miesiącach), zatrudnienie z `DB_BAZA`, piętro, flaga Public, sprzedaż LTM.
-   Klienci bez zatrudnienia trafiają do osobnego wiersza „nieprzypisane”.
-4. **Lista 4001+:** NIP-y z `DB_BAZA` powyżej 4000 do ręcznej weryfikacji.
-5. **Rynek w piętrach piramidy:** szkielet GUS (+ przedsiębiorstwa aktywne)
-   podzielony na progi według rozkładu `DB_BAZA`.
-6. **Piramida + kontrole:** suma pięter = suma GUS; nasi klienci ≤ rynek
-   w każdym piętrze; % klientów z zatrudnieniem.
-7. **Prezentacja:** piramida + tabela, z przypisem, co jest szacunkiem.
+2. ~~**SQL**: progi, klienci, profil firm, lista 4001+, proporcje, piramida.~~ Gotowe.
+3. **Uruchomienie w HALO** `00` → `06`, z kontrolami po każdym kroku.
+4. **Weryfikacja 4001+ i flagi Public**, korekty, ponowne `03` → `05` → `06`.
+5. **Prezentacja:** piramida + tabela, z przypisem, co jest szacunkiem
+   (podział klas GUS na progi, pracujący Public według wielkości).
 
-## Decyzje otwarte
+## Ograniczenia, o których mówimy przy prezentacji
 
-1. **Definicja Public:** wariant A, B (propozycja) czy C? Czy wodociągi
-   i odpady (E) dołączamy do Public?
-2. **Public:** jeden blok czy z podziałem na wielkości?
-3. **Piętro 0–40:** mikrofirmy 0–9 jako osobna podwarstwa?
-4. **„Firma u nas”:** aktywny NIP w ostatnich 12 miesiącach, czy inny okres
-   albo poziom grupy (TOP_LEVEL)?
+- Piętra 1–5 na rynku to szacunek: liczby GUS, podział na progi według
+  `DB_BAZA`. Piętro 4001+ zależy od jakości zatrudnienia dużych firm w `DB_BAZA`.
+- Penetracja Public w liczbie firm jest zaniżona: GUS liczy podmioty (każdą
+  szkołę), my liczymy NIP-y, a wiele szkół płaci przez NIP gminy lub CUW.
+  Lepsza miara dla Public: pokrycie pracujących.
+- Klienci bez zatrudnienia w `DB_BAZA` są w wierszu NIEPRZYPISANE. Jego
+  udział w sprzedaży pokazujemy na slajdzie.

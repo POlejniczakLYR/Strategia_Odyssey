@@ -23,8 +23,14 @@ proporcjonalnie do: pracujacy w klasie (Tabl. 7) x udzial podmiotow publicznych 
 Sekcje A i L maja w Tabl. 7 utajnione klasy 250-999 / 1000+: reszte sekcji dzielimy
 wg liczby podmiotow REGON wazonej wielkoscia (500 / 2000).
 
+Eksport do HALO (wariant --wariant-halo, domyslnie B_INSTYTUCJE - decyzja 2026-11-26):
+  dane/rynek_gus_do_halo.csv     dane rynku w ukladzie tabeli WORK_POLAND.T_ODY_RYNEK_GUS
+  sql/01_rynek_gus_dane.sql      gotowe INSERT-y do tej tabeli
+  Miary: FIRMY_AKTYWNE (przedsiebiorstwa aktywne, GUS Tablica 2, klasy 0-9/10-49/50-249/250+),
+         FIRMY_REGON (REGON), PRACUJACY (Tabl. 7 bez rolnikow indywidualnych, Public = szacunek).
+
 Uzycie:
-  python szkielet_rynku_gus.py [--regon 202610] [--prac 202606]
+  python szkielet_rynku_gus.py [--regon 202610] [--prac 202606] [--wariant-halo B_INSTYTUCJE]
 """
 import argparse
 import csv
@@ -79,6 +85,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--regon", default="202610")
     ap.add_argument("--prac", default="202606")
+    ap.add_argument("--wariant-halo", default="B_INSTYTUCJE", choices=list(WARIANTY))
+    ap.add_argument("--aktywne", default="gus_przedsiebiorstwa_aktywne_2kw2026.csv",
+                    help="plik przedsiebiorstw aktywnych (uklad GUS Tablica 2) w folderze dane/")
+    ap.add_argument("--aktywne-kolumna", default="FIRMY_2KW2026")
+    ap.add_argument("--aktywne-okres", default="2026-Q2")
     a = ap.parse_args()
     okres_prac = f"{a.prac[:4]}-{a.prac[4:]}"
 
@@ -154,6 +165,8 @@ def main():
             wr.writerow({"OKRES_REGON": f"{a.regon[:4]}-{a.regon[4:]}", "OKRES_PRACUJACY": okres_prac, **w})
     print(f"Zapisano {out} (pracujacy bez {rolnicy:,} rolnikow indywidualnych)\n")
 
+    eksport_halo(wynik, a)
+
     for war in WARIANTY:
         print(f"== {war}")
         print(f"{'KLASA':>8} {'POZA_PUB podm.':>15} {'POZA_PUB prac.':>15} {'PUBLIC podm.':>13} {'PUBLIC prac.':>13}")
@@ -163,6 +176,77 @@ def main():
             print(f"{k:>8} {g('POZA_PUBLIC', 'PODMIOTY_REGON'):>15,} {g('POZA_PUBLIC', 'PRACUJACY'):>15,} "
                   f"{g('PUBLIC', 'PODMIOTY_REGON'):>13,} {g('PUBLIC', 'PRACUJACY'):>13,}")
         print()
+
+
+def eksport_halo(wynik, a):
+    """Dane rynku dla wybranego wariantu Public -> CSV + INSERT-y do WORK_POLAND.T_ODY_RYNEK_GUS."""
+    okres_regon, okres_prac = f"{a.regon[:4]}-{a.regon[4:]}", f"{a.prac[:4]}-{a.prac[4:]}"
+    zr_akt = f"GUS: przedsiebiorstwa aktywne {a.aktywne_okres}, Tablica 2 (sekcje A-S bez O)"
+    zr_regon = f"GUS REGON {okres_regon}, Tablica 1 (podmioty wg przewidywanej liczby pracujacych)"
+    zr_prac = (f"GUS Pracujacy w gospodarce narodowej {okres_prac}, Tabl. 7 bez rolnikow indywidualnych, "
+               f"Public wg Tabl. 5, podzial na klasy = szacunek")
+
+    aktywne = defaultdict(int)
+    for r in czytaj(DANE / a.aktywne):
+        if r["KLASA_GUS"] in ("0-9", "10-49", "50-249", "250+"):
+            aktywne[r["KLASA_GUS"]] += int(r[a.aktywne_kolumna])
+
+    rows = [{"OKRES": a.aktywne_okres, "ZRODLO": zr_akt, "MIARA": "FIRMY_AKTYWNE", "GRUPA": "POZA_PUBLIC",
+             "KLASA_GUS": k, "WARTOSC": aktywne[k]} for k in ("0-9", "10-49", "50-249", "250+")]
+    for w in wynik:
+        if w["WARIANT_PUBLIC"] != a.wariant_halo:
+            continue
+        rows.append({"OKRES": okres_regon, "ZRODLO": zr_regon, "MIARA": "FIRMY_REGON", "GRUPA": w["GRUPA"],
+                     "KLASA_GUS": w["KLASA_GUS"], "WARTOSC": w["PODMIOTY_REGON"]})
+        rows.append({"OKRES": okres_prac, "ZRODLO": zr_prac, "MIARA": "PRACUJACY", "GRUPA": w["GRUPA"],
+                     "KLASA_GUS": w["KLASA_GUS"], "WARTOSC": w["PRACUJACY"]})
+
+    kol = ["OKRES", "ZRODLO", "MIARA", "GRUPA", "KLASA_GUS", "WARTOSC"]
+    with open(DANE / "rynek_gus_do_halo.csv", "w", encoding="utf-8", newline="") as f:
+        wr = csv.DictWriter(f, fieldnames=kol, delimiter=";")
+        wr.writeheader()
+        wr.writerows(rows)
+
+    q = lambda s: "'" + str(s).replace("'", "''") + "'"
+    linie = [
+        "SET DEFINE OFF;",
+        "-- =====================================================================",
+        "-- 01_rynek_gus_dane.sql   (PLIK GENEROWANY - nie edytowac recznie)",
+        "-- Generator: gus/szkielet_rynku_gus.py",
+        f"-- Wariant Public: {a.wariant_halo}",
+        "-- Dane rynku z GUS w klasach wielkosci GUS -> WORK_POLAND.T_ODY_RYNEK_GUS",
+        "-- (tabela z 00_setup.sql). Podzial na pietra piramidy: 05 + 06.",
+        "-- =====================================================================",
+        "",
+        "-- TRUNCATE TABLE WORK_POLAND.T_ODY_RYNEK_GUS;   -- przy odswiezeniu",
+        "",
+    ]
+    for r in rows:
+        linie.append(
+            "INSERT INTO WORK_POLAND.T_ODY_RYNEK_GUS (OKRES, ZRODLO, MIARA, GRUPA, KLASA_GUS, WARTOSC) VALUES ("
+            + ", ".join([q(r["OKRES"]), q(r["ZRODLO"]), q(r["MIARA"]), q(r["GRUPA"]), q(r["KLASA_GUS"]),
+                         str(r["WARTOSC"])]) + ");")
+    linie += [
+        "",
+        "COMMIT;",
+        "",
+        "-- KONTROLA: sumy per miara i grupa (porownac z README / dane/rynek_gus_do_halo.csv)",
+        "SELECT MIARA, GRUPA, OKRES, SUM(WARTOSC) AS WARTOSC, COUNT(*) AS LICZBA_KLAS",
+        "FROM   WORK_POLAND.T_ODY_RYNEK_GUS",
+        "GROUP  BY MIARA, GRUPA, OKRES",
+        "ORDER  BY MIARA, GRUPA;",
+        "",
+    ]
+    plik_sql = DANE.parent / "sql" / "01_rynek_gus_dane.sql"
+    plik_sql.parent.mkdir(exist_ok=True)
+    plik_sql.write_text("\n".join(linie), encoding="utf-8")
+    print(f"Eksport HALO ({a.wariant_halo}): {len(rows)} wierszy -> dane/rynek_gus_do_halo.csv, sql/{plik_sql.name}")
+    for miara in ("FIRMY_AKTYWNE", "FIRMY_REGON", "PRACUJACY"):
+        for grp in ("POZA_PUBLIC", "PUBLIC"):
+            s = sum(r["WARTOSC"] for r in rows if r["MIARA"] == miara and r["GRUPA"] == grp)
+            if s:
+                print(f"  {miara:14} {grp:12} {s:>12,}")
+    print()
 
 
 if __name__ == "__main__":
