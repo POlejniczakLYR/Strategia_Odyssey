@@ -203,7 +203,14 @@ Wnioski:
     Animex Foods, Stryker, Monnari, Duży Ben). Trzeba im uzupełnić zatrudnienie
     (`T_ODY_KOREKTA_FIRMY`): najwięksi według sprzedaży ręcznie (eKRS: przeciętne
     zatrudnienie), resztę według decyzji (D21 pokazuje, ilu to wymaga);
-  - brak w `T_CEIDG_GUS`: 396 NIP-ów, 1,7% sprzedaży: do identyfikacji (D22);
+  - brak w `T_CEIDG_GUS`: 396 NIP-ów, 1,7% sprzedaży: według D22 to grupy VAT
+    (NIP grupy zamiast NIP-u spółki) i NIP-y zagraniczne;
+  - D21: 200 największych spółek to 6,9% sprzedaży (połowa sprzedaży spółek
+    nieprzypisanych), 1000 największych to 10,4%; reszta (ok. 7 tys. firm)
+    ma średnio mniejszą sprzedaż na NIP niż klienci 0–40;
+  - **w HALO jest drugie źródło zatrudnienia: BvD (Orbis)** w `T_PAYER` i `T_COMPANY`
+    (`BVD_NUMBER_OF_EMPLOYEES`, `BVD_COMPANY_ID` = „PL” + REGON); D23–D26 sprawdzają
+    pokrycie, zgodność z `DB_BAZA` i to, czy przez REGON z BvD da się przypisać grupy VAT;
   - 30 największych nieprzypisanych to 27% ich sprzedaży.
   - Do wyjaśnienia: czy wśród klientów są odsprzedawcy (np. hurtownie z działu
     46), których nie powinno być w piramidzie.
