@@ -1618,3 +1618,168 @@ SELECT SAP, STATUS,
 FROM   f
 GROUP  BY SAP, STATUS
 ORDER  BY SAP, STATUS;
+
+
+-- =====================================================================
+-- L. SLAJD v3 (2026-11-26): JDG wydzielone z 0-9 + kolumna
+-- "kartoteka, brak w portfolio" = NIP z T_CEIDG_GUS, firma aktywna w rejestrze,
+-- bez SOLDTO w portfolio (niezarejestrowani + Kwarantanna + byli klienci).
+-- Portfolio = jak w D26 (nieusuniety SOLDTO lub zakupy 12 mies., glowny SOLDTO
+-- poza Kwarantanna). JDG = osoba fizyczna (T_CEIDG_GUS.TYP_PODMIOTU = 'F').
+-- =====================================================================
+
+-- === D28 Wiersze slajdu: aktywne wg biznes linii, portfolio, kartoteka bez portfolio
+WITH linie AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
+           til.SOLDTO_NUMBER,
+           til.SALES_AMOUNT
+    FROM   POLAND.T_INVOICE_LINE til
+    JOIN   POLAND.T_PAYER tp
+           ON  tp.PAYER_NUMBER = til.PAYER_NUMBER
+           AND tp.COUNTRY_CODE = til.COUNTRY_CODE
+    WHERE  til.COUNTRY_CODE        = 'PL'
+      AND  til.BUSINESS_SCOPE_FLAG = 'Y'
+      AND  NVL(til.CANCELLED_FLAG, 'N')   <> 'Y'
+      AND  NVL(til.DL_DELETION_FLAG, 'N') <> 'Y'
+      AND  til.INVOICE_DATE >= ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -12)
+      AND  til.INVOICE_DATE <  TRUNC(SYSDATE, 'MM')
+),
+sprz AS (
+    SELECT NIP, SOLDTO_NUMBER, SUM(SALES_AMOUNT) AS SALES
+    FROM   linie
+    WHERE  NIP IS NOT NULL
+    GROUP  BY NIP, SOLDTO_NUMBER
+),
+aktywni AS (
+    SELECT NIP, SUM(SALES) AS SALES FROM sprz GROUP BY NIP HAVING SUM(SALES) > 0
+),
+tot AS (
+    SELECT SUM(SALES) AS SALES_ALL FROM aktywni
+),
+kartoteka AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
+           ts.SOLDTO_NUMBER
+    FROM   POLAND.T_SOLDTO ts
+    JOIN   POLAND.T_PAYER tp
+           ON  tp.PAYER_NUMBER = ts.PAYER_NUMBER
+           AND tp.COUNTRY_CODE = ts.COUNTRY_CODE
+    WHERE  ts.COUNTRY_CODE = 'PL'
+      AND  NVL(ts.DL_DELETION_FLAG, 'N') <> 'Y'
+),
+soldto_all AS (
+    SELECT NIP, SOLDTO_NUMBER, SUM(SALES) AS SALES
+    FROM  (SELECT NIP, SOLDTO_NUMBER, SALES FROM sprz
+           UNION ALL
+           SELECT NIP, SOLDTO_NUMBER, 0 FROM kartoteka)
+    WHERE  LENGTH(NIP) = 10
+    GROUP  BY NIP, SOLDTO_NUMBER
+),
+glowny AS (
+    SELECT NIP,
+           MAX(SOLDTO_NUMBER) KEEP (DENSE_RANK LAST ORDER BY SALES NULLS FIRST, SOLDTO_NUMBER) AS SOLDTO_GLOWNY
+    FROM   soldto_all
+    GROUP  BY NIP
+),
+linia AS (
+    SELECT g.NIP,
+           CASE
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE 'IS %'
+                 OR UPPER(sfr.SALES_FORCE_REGION) = 'IS'              THEN 'IS'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE 'FS %'
+                 OR UPPER(sfr.SALES_FORCE_REGION) = 'FS'              THEN 'FS'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%MID MARKET%'   THEN 'MM'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%QUARANT%'      THEN 'KWARANTANNA'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%OTHER SMB%'    THEN 'INNE_SMB'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%K' || CHR(38) || 'N%' THEN 'KN'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%STRATEG%'      THEN 'STRATEGIC'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%INTERNAT%'     THEN 'INTERNATIONAL'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%PUBLI%'        THEN 'PUBLIC'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%OTHER CA%'     THEN 'INNE_CA'
+               ELSE                                                          'BRAK'
+           END                                                              AS LINIA
+    FROM   glowny g
+    LEFT JOIN POLAND.T_SOLDTO ts
+           ON  ts.SOLDTO_NUMBER = g.SOLDTO_GLOWNY
+           AND ts.COUNTRY_CODE  = 'PL'
+    LEFT JOIN SHARED.T_SALES_FORCE_REGION sfr
+           ON  sfr.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+           AND sfr.COUNTRY_CODE            = 'PL'
+           AND sfr.LANGUAGE_CODE           = 'POLISH'
+),
+ceidg_aktywne AS (                              -- firmy aktywne w rejestrze
+    SELECT cg.NIP
+    FROM   WORK_POLAND.T_CEIDG_GUS cg
+    WHERE  NVL(cg.DELETION_FLAG, 'N') <> 'Y'
+      AND  cg.DATA_SKRESLENIA  IS NULL
+      AND  cg.DATA_ZAKONCZENIA IS NULL
+      AND  NOT (cg.DATA_ZAWIESZENIA IS NOT NULL
+                AND NVL(cg.DATA_WZNAWIENIA, DATE '1900-01-01') < cg.DATA_ZAWIESZENIA)
+),
+wszyscy AS (                                    -- portfolio (SAP) + kartoteka bez portfolio
+    SELECT l.NIP, l.LINIA,
+           CASE WHEN l.LINIA <> 'KWARANTANNA' OR a.NIP IS NOT NULL THEN 1 ELSE 0 END AS W_PORTFOLIO
+    FROM   linia l
+    LEFT JOIN aktywni a ON a.NIP = l.NIP
+    UNION ALL
+    SELECT c.NIP, NULL, 0
+    FROM   ceidg_aktywne c
+    WHERE  NOT EXISTS (SELECT 1 FROM linia l WHERE l.NIP = c.NIP)
+),
+db AS (
+    SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
+           MAX(d.ZATRUDNIENIE)                                              AS ZATR
+    FROM   WORK_POLAND.DB_BAZA d
+    WHERE  d.ZATRUDNIENIE IS NOT NULL
+    GROUP  BY REGEXP_REPLACE(d.NIP, '[^0-9]', '')
+),
+kpp AS (
+    SELECT LPAD(TO_CHAR(NIP), 10, '0')                                      AS NIP,
+           MAX(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'))                         AS DZIAL_KPP
+    FROM   WORK_POLAND.T_KATALOG_PODMIOTOW_PUBLICZNYCH
+    WHERE  NIP IS NOT NULL AND KATEGORIA_PODMIOTU = 'PUBLIC' AND NVL(STATUS, 'ACTIVE') = 'ACTIVE'
+    GROUP  BY LPAD(TO_CHAR(NIP), 10, '0')
+),
+f AS (
+    SELECT w.NIP, w.LINIA, w.W_PORTFOLIO,
+           CASE WHEN a.NIP IS NOT NULL THEN 1 ELSE 0 END                    AS AKTYWNY,
+           CASE WHEN w.W_PORTFOLIO = 0 AND ca.NIP IS NOT NULL THEN 1 ELSE 0 END AS KART_BEZ_PORTF,
+           NVL(a.SALES, 0)                                                  AS SALES,
+           CASE
+               WHEN (kpp.NIP IS NOT NULL
+                     OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
+                AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP)
+                    IN ('84','85','86','87','88','90','91','92','93')       THEN '7 PUBLIC'
+               WHEN db.ZATR IS NULL                                         THEN '8 BRAK KLASY'
+               WHEN db.ZATR < 10 AND cg.TYP_PODMIOTU = 'F'                  THEN '1 0-9 JDG'
+               WHEN db.ZATR < 10                                            THEN '2 0-9 POZOSTALE'
+               WHEN db.ZATR < 50                                            THEN '3 10-49'
+               WHEN db.ZATR < 250                                           THEN '4 50-249'
+               WHEN db.ZATR < 1000                                          THEN '5 250-999'
+               ELSE                                                              '6 1000+'
+           END                                                              AS KLASA,
+           CASE WHEN cg.TYP_PODMIOTU = 'F' THEN 1 ELSE 0 END                AS JDG
+    FROM   wszyscy w
+    LEFT JOIN aktywni a        ON a.NIP  = w.NIP
+    LEFT JOIN ceidg_aktywne ca ON ca.NIP = w.NIP
+    LEFT JOIN db               ON db.NIP = w.NIP
+    LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP = w.NIP
+    LEFT JOIN kpp              ON kpp.NIP = w.NIP
+)
+SELECT KLASA,
+       SUM(CASE WHEN AKTYWNY = 1 AND LINIA IN ('IS') THEN 1 ELSE 0 END) AS LN_IS,
+       SUM(CASE WHEN AKTYWNY = 1 AND LINIA IN ('FS') THEN 1 ELSE 0 END) AS LN_FS,
+       SUM(CASE WHEN AKTYWNY = 1 AND LINIA IN ('MM') THEN 1 ELSE 0 END) AS LN_MM,
+       SUM(CASE WHEN AKTYWNY = 1 AND LINIA IN ('KN') THEN 1 ELSE 0 END) AS LN_KN,
+       SUM(CASE WHEN AKTYWNY = 1 AND LINIA IN ('STRATEGIC') THEN 1 ELSE 0 END) AS LN_STRATEGIC,
+       SUM(CASE WHEN AKTYWNY = 1 AND LINIA IN ('INTERNATIONAL') THEN 1 ELSE 0 END) AS LN_INTERNATIONAL,
+       SUM(CASE WHEN AKTYWNY = 1 AND LINIA IN ('PUBLIC') THEN 1 ELSE 0 END) AS LN_PUBLIC,
+       SUM(CASE WHEN AKTYWNY = 1 AND LINIA IN ('INNE_SMB','INNE_CA','KWARANTANNA','BRAK') THEN 1 ELSE 0 END) AS LN_INNE,
+       SUM(AKTYWNY)                                                     AS AKTYWNE,
+       SUM(W_PORTFOLIO)                                                 AS PORTFOLIO,
+       SUM(KART_BEZ_PORTF)                                              AS KARTOTEKA_BEZ_PORTFOLIO,
+       SUM(CASE WHEN KART_BEZ_PORTF = 1 AND JDG = 1 THEN 1 ELSE 0 END)  AS W_TYM_JDG,
+       ROUND(SUM(SALES) / MAX(t.SALES_ALL) * 100, 1)                    AS PCT_SPRZEDAZY
+FROM   f
+CROSS JOIN tot t
+GROUP  BY KLASA
+ORDER  BY KLASA;
