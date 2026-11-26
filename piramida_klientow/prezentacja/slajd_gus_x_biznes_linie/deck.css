@@ -21,7 +21,7 @@ body {
 
 .slajd {
   background: var(--bg);
-  padding: 88px 96px 96px;
+  padding: 64px 96px 72px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -47,7 +47,7 @@ body {
 .grupy,
 .siatka {
   display: grid;
-  grid-template-columns: 146px 140px 150px 100px 100px 100px 100px 100px 100px 100px 100px 118px 110px 110px 110px;
+  grid-template-columns: 138px 130px 138px 92px 92px 92px 92px 92px 92px 92px 92px 110px 104px 104px 104px 116px;
   column-gap: 3px;
 }
 
@@ -72,6 +72,7 @@ body {
 .g-bl    { grid-column: 4 / 12; }
 .g-nasi  { grid-column: 12 / 14; }
 .g-pen   { grid-column: 14 / 16; }
+.g-kart  { grid-column: 16 / 17; }
 
 .kol {
   font-size: 24px;
@@ -89,9 +90,10 @@ body {
 
 .wiersz {
   font-size: 24px;
+  white-space: nowrap;
   font-weight: 700;
   color: var(--ink);
-  padding: 8px 4px;
+  padding: 6px 4px;
   margin: 0;
 }
 
@@ -100,7 +102,7 @@ body {
   font-variant-numeric: tabular-nums;
   text-align: right;
   color: var(--ink);
-  padding: 8px 8px 8px 2px;
+  padding: 6px 6px 6px 2px;
   margin: 0;
 }
 
@@ -108,7 +110,7 @@ body {
   font-size: 24px;
   font-variant-numeric: tabular-nums;
   text-align: center;
-  padding: 8px 2px;
+  padding: 6px 2px;
   border-radius: 4px;
   margin: 0;
   color: var(--ink);
@@ -131,15 +133,19 @@ body {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: right;
-  padding: 8px 8px 8px 2px;
+  padding: 6px 6px 6px 2px;
   margin: 0;
   color: var(--ink);
 }
 
-/* GUS podaje firmy aktywne tylko dla 250+: komorki na dwa wiersze (250-999 i 1000+) */
-.r250-firmy { grid-column: 2 / 3;   grid-row: 5 / 7; align-self: center; }
-.r250-pport { grid-column: 14 / 15; grid-row: 5 / 7; align-self: center; }
-.r250-pakt  { grid-column: 15 / 16; grid-row: 5 / 7; align-self: center; }
+/* komorki rynku na dwa wiersze: 0-9 (JDG + inne) i 250+ (250-999 + 1000+) */
+.r09-firmy  { grid-column: 2 / 3;   grid-row: 2 / 4; align-self: center; }
+.r09-prac   { grid-column: 3 / 4;   grid-row: 2 / 4; align-self: center; }
+.r09-pport  { grid-column: 14 / 15; grid-row: 2 / 4; align-self: center; }
+.r09-pakt   { grid-column: 15 / 16; grid-row: 2 / 4; align-self: center; }
+.r250-firmy { grid-column: 2 / 3;   grid-row: 6 / 8; align-self: center; }
+.r250-pport { grid-column: 14 / 15; grid-row: 6 / 8; align-self: center; }
+.r250-pakt  { grid-column: 15 / 16; grid-row: 6 / 8; align-self: center; }
 
 .razem {
   border-top: 3px solid var(--ink);
