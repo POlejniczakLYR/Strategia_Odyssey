@@ -154,8 +154,11 @@ jest tylko jako udział %. Dopiero gdy wyniki mają sens, budujemy tabele `00`�
 | `sql/06_piramida.sql` | Piramida: rynek, nasi klienci, penetracja, pokrycie pracujących, sprzedaż; kontrole; podwarstwy 0–9 / 10–40 | `T_ODY_PIRAMIDA` |
 
 **Flaga Public (wariant B)** w `03`: NIP jest w Katalogu Podmiotów
-Publicznych albo ma w REGON formę własności 1xx (Skarb Państwa, państwowe
-osoby prawne, JST) **i** działa w działach PKD 84–88 / 90–93. Działy liczymy
+Publicznych (`PUBLIC`, `ACTIVE`) albo ma w `T_CEIDG_GUS` publiczną formę
+własności (Skarb Państwa, państwowe osoby prawne, JST, mieszaną z przewagą
+sektora publicznego) **i** działa w działach PKD 84–88 / 90–93. Forma własności
+w `T_CEIDG_GUS` jest tekstem bez kodu, więc reguła rozpoznaje ją po treści
+(sprawdzone na wszystkich 22 wartościach, diagnostyka D03). Działy liczymy
 po dwóch pierwszych cyfrach PKD, bo w PKD 2007 i PKD 2025 są takie same
 (litery sekcji się różnią). Kontrole 2–5 w `03` porównują flagę z formą
 własności i z regionem sprzedaży (np. region PUBLIC bez flagi). Błędy

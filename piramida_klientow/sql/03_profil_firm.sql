@@ -14,8 +14,9 @@ SET DEFINE OFF;
 -- DZIAL_PKD    : T_CEIDG_GUS > Katalog Podmiotow Publicznych > DB_BAZA
 --                (2 pierwsze cyfry - dzialy 84-93 sa takie same w PKD 2007 i 2025)
 -- SEKTOR       : PUBLICZNY gdy NIP jest w Katalogu Podmiotow Publicznych
---                albo forma wlasnosci REGON 1xx (Skarb Panstwa, panstwowe osoby
---                prawne, JST) / mieszana z przewaga publicznej
+--                (KATEGORIA_PODMIOTU = 'PUBLIC', STATUS = 'ACTIVE') albo forma
+--                wlasnosci w T_CEIDG_GUS: Skarb Panstwa, panstwowe osoby prawne, JST,
+--                mieszana w sektorze publicznym / z przewaga sektora publicznego
 -- FLAGA_PUBLIC : wariant B = SEKTOR PUBLICZNY i dzial 84-88 / 90-93
 --                (administracja, edukacja, zdrowie, pomoc spoleczna, kultura);
 --                korekta reczna ma pierwszenstwo
@@ -140,8 +141,12 @@ baza AS (
            COALESCE(cg.FORMA_WLASNOSCI, kpp.FORMA_WLASNOSCI)         AS FORMA_WLASNOSCI,
            CASE
                WHEN kpp.NIP IS NOT NULL                                  THEN 'PUBLICZNY'
-               WHEN REGEXP_LIKE(cg.FORMA_WLASNOSCI, '^ *1')              THEN 'PUBLICZNY'  -- 111 / 112 / 113
-               WHEN UPPER(cg.FORMA_WLASNOSCI) LIKE '%PRZEWAG%PUBLICZN%'  THEN 'PUBLICZNY'  -- mieszana, przewaga publ.
+               -- forma wlasnosci w T_CEIDG_GUS jest tekstem bez kodu (sprawdzone 2026-11-26, D03):
+               -- Skarb Panstwa, panstwowe osoby prawne, JST, mieszana "w sektorze publicznym"
+               -- i "miedzy sektorami z przewaga sektora publicznego"; kod 1xx - gdyby byl z kodem
+               WHEN REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI),
+                    '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO')
+                                                                         THEN 'PUBLICZNY'
                WHEN cg.FORMA_WLASNOSCI IS NOT NULL                       THEN 'PRYWATNY'
                WHEN cg.TYP_PODMIOTU = 'F'                                THEN 'PRYWATNY'   -- osoba fizyczna (CEIDG)
                ELSE                                                           'NIEZNANY'
@@ -220,8 +225,9 @@ ORDER  BY PIETRO_NR;
 
 -- ---------------------------------------------------------------------
 -- KONTROLA 2: forma wlasnosci -> sektor. Sprawdzic, czy kazda forma
--- trafila do wlasciwego sektora (1xx = publiczny, 2xx = prywatny,
--- mieszane wg przewagi). Bledy poprawiamy w CASE w kroku 2.
+-- trafila do wlasciwego sektora (Skarb Panstwa / panstwowe osoby prawne /
+-- JST / mieszane z przewaga publicznej = publiczny). Bledy poprawiamy
+-- w CASE w kroku 2.
 -- ---------------------------------------------------------------------
 SELECT FORMA_WLASNOSCI, SEKTOR, ZRODLO_SEKTORA,
        COUNT(*)                                                         AS FIRMY,

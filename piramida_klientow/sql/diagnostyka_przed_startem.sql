@@ -10,23 +10,22 @@
 --      flaga Public vs przypisanie w sprzedazy
 -- Sprzedaz pokazujemy tylko jako UDZIAL % (bez kwot).
 --
--- JAK URUCHOMIC (SQL Developer): caly plik przez F5 (Run Script),
--- potem skopiowac cale okno "Script Output" i wkleic. Wyniki sa w CSV
--- (SET SQLFORMAT csv), kazdy blok zaczyna sie od "=== Dxx".
--- Inne narzedzie: usunac linie SET / PROMPT i uruchamiac zapytania
--- po kolei (wynik kazdego wkleic z numerem Dxx).
+-- JAK URUCHOMIC (DBeaver): zaznaczyc zapytania i Alt+X (Execute script) -
+-- kazdy wynik w osobnej zakladce "Results N", w kolejnosci zapytan.
+-- Wklejamy zrzut ekranu albo tekst (w siatce wynikow: Ctrl+A, potem
+-- prawy klik -> Advanced Copy -> Copy with headers), z numerem Dxx.
 -- Czas: kilka minut (DB_BAZA i faktury LTM sa czytane kilka razy).
+--
+-- 2026-11-26: po wynikach D01-D04 poprawiona regula sektora publicznego
+-- (forma wlasnosci w T_CEIDG_GUS jest tekstem bez kodu 1xx) i dodane D16.
 -- =====================================================================
-SET DEFINE OFF
-SET FEEDBACK OFF
-SET SQLFORMAT csv
 
 
 -- =====================================================================
 -- A. SLOWNIKI
 -- =====================================================================
 
-PROMPT === D01 Katalog Podmiotow Publicznych: kategorie i statusy
+-- === D01 Katalog Podmiotow Publicznych: kategorie i statusy
 SELECT KATEGORIA_PODMIOTU, STATUS,
        COUNT(*)            AS PODMIOTY,
        COUNT(NIP)          AS Z_NIP,
@@ -36,7 +35,7 @@ GROUP  BY KATEGORIA_PODMIOTU, STATUS
 ORDER  BY PODMIOTY DESC;
 
 
-PROMPT === D02 Katalog Podmiotow Publicznych: dzialy PKD (top 30)
+-- === D02 Katalog Podmiotow Publicznych: dzialy PKD (top 30)
 SELECT NVL(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'), '??')                  AS DZIAL,
        COUNT(*)                                                         AS PODMIOTY,
        COUNT(NIP)                                                       AS Z_NIP,
@@ -48,7 +47,7 @@ ORDER  BY PODMIOTY DESC
 FETCH FIRST 30 ROWS ONLY;
 
 
-PROMPT === D03 T_CEIDG_GUS: forma wlasnosci x typ podmiotu (top 30)
+-- === D03 T_CEIDG_GUS: forma wlasnosci x typ podmiotu (top 30)
 SELECT SUBSTR(NVL(FORMA_WLASNOSCI, '(brak)'), 1, 90)                    AS FORMA_WLASNOSCI,
        TYP_PODMIOTU,
        COUNT(*)                                                         AS PODMIOTY
@@ -58,7 +57,7 @@ ORDER  BY PODMIOTY DESC
 FETCH FIRST 30 ROWS ONLY;
 
 
-PROMPT === D04 T_CEIDG_GUS: przeglad (1 wiersz)
+-- === D04 T_CEIDG_GUS: przeglad (1 wiersz)
 SELECT COUNT(*)                                                         AS PODMIOTY,
        COUNT(DISTINCT NIP)                                              AS NIP_UNIKALNE,
        SUM(CASE WHEN NVL(DELETION_FLAG, 'N') = 'Y' OR DATA_SKRESLENIA IS NOT NULL
@@ -74,7 +73,7 @@ SELECT COUNT(*)                                                         AS PODMI
 FROM   WORK_POLAND.T_CEIDG_GUS;
 
 
-PROMPT === D05 DB_BAZA: przeglad (1 wiersz)
+-- === D05 DB_BAZA: przeglad (1 wiersz)
 SELECT COUNT(*)                                                         AS WIERSZE,
        COUNT(DISTINCT REGEXP_REPLACE(NIP, '[^0-9]', ''))                AS NIP_UNIKALNE,
        COUNT(DISTINCT CASE WHEN LENGTH(REGEXP_REPLACE(NIP, '[^0-9]', '')) = 10
@@ -90,7 +89,7 @@ SELECT COUNT(*)                                                         AS WIERS
 FROM   WORK_POLAND.DB_BAZA;
 
 
-PROMPT === D06 DB_BAZA: z ktorego roku jest zatrudnienie (ostatni rok na NIP)
+-- === D06 DB_BAZA: z ktorego roku jest zatrudnienie (ostatni rok na NIP)
 WITH db AS (
     SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
            MAX(d.ZATRUDNIENIE) KEEP (DENSE_RANK LAST ORDER BY
@@ -112,7 +111,7 @@ GROUP  BY NVL(ROK, '(brak)')
 ORDER  BY ROK_ZATRUDNIENIA DESC;
 
 
-PROMPT === D07 T_REGON_PKD_WIELKOSC (REGON w HALO): sumy wg daty stanu
+-- === D07 T_REGON_PKD_WIELKOSC (REGON w HALO): sumy wg daty stanu
 SELECT DATA_STANU,
        COUNT(*)            AS KODY_PKD,
        SUM(OGOLEM)         AS OGOLEM,
@@ -130,7 +129,7 @@ ORDER  BY DATA_STANU DESC;
 -- Liczby GUS wpisane na stale (wariant B, dane/rynek_gus_do_halo.csv).
 -- =====================================================================
 
-PROMPT === D08 DB_BAZA vs GUS w klasach GUS (pokrycie rynku przez DB_BAZA)
+-- === D08 DB_BAZA vs GUS w klasach GUS (pokrycie rynku przez DB_BAZA)
 WITH db AS (
     SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
            MAX(d.ZATRUDNIENIE) KEEP (DENSE_RANK LAST ORDER BY
@@ -152,8 +151,7 @@ kpp AS (
 f AS (
     SELECT db.NIP, db.ZATR,
            CASE WHEN (kpp.NIP IS NOT NULL
-                      OR REGEXP_LIKE(cg.FORMA_WLASNOSCI, '^ *1')
-                      OR UPPER(cg.FORMA_WLASNOSCI) LIKE '%PRZEWAG%PUBLICZN%')
+                      OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                  AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB)
                      IN ('84','85','86','87','88','90','91','92','93')
                 THEN 'T' ELSE 'N' END                                       AS PUBLIC,
@@ -199,7 +197,7 @@ GROUP  BY g.KLASA_GUS, g.LP, g.GUS_FIRMY_AKTYWNE, g.GUS_FIRMY_REGON, g.GUS_PRACU
 ORDER  BY g.LP;
 
 
-PROMPT === D09 Proporcje podzialu klas GUS na pietra (% firm F_ i % pracujacych P_)
+-- === D09 Proporcje podzialu klas GUS na pietra (% firm F_ i % pracujacych P_)
 WITH db AS (
     SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
            MAX(d.ZATRUDNIENIE) KEEP (DENSE_RANK LAST ORDER BY
@@ -221,8 +219,7 @@ kpp AS (
 f AS (
     SELECT db.NIP, db.ZATR,
            CASE WHEN (kpp.NIP IS NOT NULL
-                      OR REGEXP_LIKE(cg.FORMA_WLASNOSCI, '^ *1')
-                      OR UPPER(cg.FORMA_WLASNOSCI) LIKE '%PRZEWAG%PUBLICZN%')
+                      OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                  AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB)
                      IN ('84','85','86','87','88','90','91','92','93')
                 THEN 'T' ELSE 'N' END                                       AS PUBLIC,
@@ -266,7 +263,7 @@ GROUP  BY KLASA_GUS
 ORDER  BY DECODE(KLASA_GUS, '0-9', 1, '10-49', 2, '50-249', 3, '250-999', 4, '1000+', 5, '250+', 6);
 
 
-PROMPT === D10 Duze firmy w DB_BAZA: 1000+ i 4001+ vs GUS, duplikaty zatrudnienia w grupach
+-- === D10 Duze firmy w DB_BAZA: 1000+ i 4001+ vs GUS, duplikaty zatrudnienia w grupach
 WITH db AS (
     SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
            MAX(d.ZATRUDNIENIE) KEEP (DENSE_RANK LAST ORDER BY
@@ -290,8 +287,7 @@ kpp AS (
 f AS (
     SELECT db.NIP, db.ZATR, db.GRUPA,
            CASE WHEN (kpp.NIP IS NOT NULL
-                      OR REGEXP_LIKE(cg.FORMA_WLASNOSCI, '^ *1')
-                      OR UPPER(cg.FORMA_WLASNOSCI) LIKE '%PRZEWAG%PUBLICZN%')
+                      OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                  AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB)
                      IN ('84','85','86','87','88','90','91','92','93')
                 THEN 'T' ELSE 'N' END                                       AS PUBLIC,
@@ -323,7 +319,7 @@ SELECT COUNT(*)                                                         AS DB_FI
 FROM   g;
 
 
-PROMPT === D11 Top 40 firm wg zatrudnienia w DB_BAZA (poza Public, aktywne)
+-- === D11 Top 40 firm wg zatrudnienia w DB_BAZA (poza Public, aktywne)
 WITH db AS (
     SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
            MAX(d.ZATRUDNIENIE) KEEP (DENSE_RANK LAST ORDER BY
@@ -354,8 +350,7 @@ f AS (
            COALESCE(cg.NAZWA, db.NAZWA)                                     AS NAZWA,
            COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB) AS DZIAL,
            CASE WHEN (kpp.NIP IS NOT NULL
-                      OR REGEXP_LIKE(cg.FORMA_WLASNOSCI, '^ *1')
-                      OR UPPER(cg.FORMA_WLASNOSCI) LIKE '%PRZEWAG%PUBLICZN%')
+                      OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                  AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB)
                      IN ('84','85','86','87','88','90','91','92','93')
                 THEN 'T' ELSE 'N' END                                       AS PUBLIC,
@@ -387,7 +382,7 @@ FETCH FIRST 40 ROWS ONLY;
 -- C. NASI KLIENCI (faktury z ostatnich 12 zamknietych miesiecy)
 -- =====================================================================
 
-PROMPT === D12 Klienci LTM: NIP i pokrycie danymi (DB_BAZA, CEIDG_GUS, Katalog Podm. Publ.)
+-- === D12 Klienci LTM: NIP i pokrycie danymi (DB_BAZA, CEIDG_GUS, Katalog Podm. Publ.)
 WITH linie AS (
     SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
            til.SALES_AMOUNT
@@ -442,7 +437,7 @@ GROUP  BY CASE WHEN n.NIP IS NULL        THEN '1 BEZ_NIP'
 ORDER  BY GRUPA;
 
 
-PROMPT === D13 Wstepna piramida NASZYCH klientow (aktywni LTM)
+-- === D13 Wstepna piramida NASZYCH klientow (aktywni LTM)
 WITH linie AS (
     SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
            til.SALES_AMOUNT
@@ -485,8 +480,7 @@ kpp AS (
 f AS (
     SELECT n.NIP, n.SALES, db.ZATR,
            CASE WHEN (kpp.NIP IS NOT NULL
-                      OR REGEXP_LIKE(cg.FORMA_WLASNOSCI, '^ *1')
-                      OR UPPER(cg.FORMA_WLASNOSCI) LIKE '%PRZEWAG%PUBLICZN%')
+                      OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                  AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB)
                      IN ('84','85','86','87','88','90','91','92','93')
                 THEN 'T' ELSE 'N' END                                       AS PUBLIC
@@ -517,7 +511,7 @@ GROUP  BY PIETRO
 ORDER  BY TO_NUMBER(SUBSTR(PIETRO, 1, INSTR(PIETRO, ' ') - 1));
 
 
-PROMPT === D14 Flaga Public vs przypisanie w sprzedazy (typ glownego SOLDTO, region z "PUBLI")
+-- === D14 Flaga Public vs przypisanie w sprzedazy (typ glownego SOLDTO, region z "PUBLI")
 WITH linie AS (
     SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
            til.SOLDTO_NUMBER,
@@ -573,8 +567,7 @@ kpp AS (
 f AS (
     SELECT n.*,
            CASE WHEN kpp.NIP IS NOT NULL
-                  OR REGEXP_LIKE(cg.FORMA_WLASNOSCI, '^ *1')
-                  OR UPPER(cg.FORMA_WLASNOSCI) LIKE '%PRZEWAG%PUBLICZN%'    THEN 'PUBLICZNY'
+                  OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO')            THEN 'PUBLICZNY'
                 WHEN cg.FORMA_WLASNOSCI IS NOT NULL OR cg.TYP_PODMIOTU = 'F' THEN 'PRYWATNY'
                 ELSE                                                             'NIEZNANY' END AS SEKTOR,
            COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB) AS DZIAL
@@ -597,7 +590,7 @@ GROUP  BY CASE WHEN SEKTOR = 'PUBLICZNY' AND DZIAL IN ('84','85','86','87','88',
 ORDER  BY KLIENCI DESC;
 
 
-PROMPT === D15 Regiony sprzedazy (obecne przypisanie SOLDTO) - klienci LTM
+-- === D15 Regiony sprzedazy (obecne przypisanie SOLDTO) - klienci LTM
 WITH linie AS (
     SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
            til.SOLDTO_NUMBER,
@@ -629,3 +622,27 @@ LEFT JOIN SHARED.T_SALES_FORCE_REGION sfr
 GROUP  BY NVL(ts.SALES_FORCE_TYPE_CODE, '-'), ts.SALES_FORCE_REGION_CODE, SUBSTR(sfr.SALES_FORCE_REGION, 1, 50)
 ORDER  BY PCT_SPRZEDAZY DESC
 FETCH FIRST 60 ROWS ONLY;
+
+
+-- =====================================================================
+-- D. DOPISANE PO WYNIKACH D01-D04
+-- =====================================================================
+
+-- === D16 Katalog Podmiotow Publicznych (PUBLIC, ACTIVE) POZA dzialami wariantu B
+-- Ktore podmioty publiczne z katalogu NIE trafia do Public, bo ich dzial PKD
+-- jest spoza listy 84-88 / 90-93 (np. 69 - centra uslug wspolnych obslugujace
+-- szkoly, 42 - zarzady drog, 68 - zarzady gospodarki mieszkaniowej).
+SELECT NVL(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'), '??')                  AS DZIAL,
+       SUBSTR(TYP_PODMIOTU, 1, 50)                                      AS TYP_PODMIOTU,
+       COUNT(*)                                                         AS PODMIOTY,
+       COUNT(DISTINCT NIP)                                              AS NIP_UNIKALNE,
+       MAX(SUBSTR(FORMA_FINANSOWANIA, 1, 40))                           AS PRZYKLAD_FORMY_FINANSOWANIA,
+       MAX(SUBSTR(NAZWA_PODMIOTU, 1, 60))                               AS PRZYKLAD_NAZWY
+FROM   WORK_POLAND.T_KATALOG_PODMIOTOW_PUBLICZNYCH
+WHERE  KATEGORIA_PODMIOTU = 'PUBLIC'
+  AND  STATUS = 'ACTIVE'
+  AND  NVL(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'), '??')
+       NOT IN ('84','85','86','87','88','90','91','92','93')
+GROUP  BY NVL(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'), '??'), SUBSTR(TYP_PODMIOTU, 1, 50)
+ORDER  BY PODMIOTY DESC
+FETCH FIRST 40 ROWS ONLY;
