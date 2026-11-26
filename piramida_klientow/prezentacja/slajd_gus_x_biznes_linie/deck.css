@@ -4,7 +4,6 @@
   --bg: #FBFBF8;
   --rule: #C9D1DC;
   --eyebrow: #1757AC;
-  --accent: #E8692A;
   --h0: #EEF1F5;
   --h1: #CCE3FD;
   --h2: #9DC8F7;
@@ -22,7 +21,7 @@ body {
 
 .slajd {
   background: var(--bg);
-  padding: 96px 128px 104px;
+  padding: 88px 96px 96px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -32,28 +31,28 @@ body {
   font-size: 24px;
   font-weight: 600;
   color: var(--eyebrow);
-  margin: 0 0 12px;
+  margin: 0 0 10px;
 }
 
 .tytul {
   font-family: 'Space Grotesk', Arial, sans-serif;
-  font-size: 52px;
+  font-size: 48px;
   font-weight: 600;
   line-height: 1.1;
   color: var(--ink);
-  margin: 0 0 28px;
+  margin: 0 0 24px;
 }
 
-/* wspolna siatka kolumn: przedzial | firmy GUS | pracujacy GUS | 7 biznes linii | razem | penetracja */
+/* kolumny: klasa | firmy GUS | pracujacy GUS | 8 biznes linii | portfolio | aktywne | % portfolio | % aktywne */
 .grupy,
 .siatka {
   display: grid;
-  grid-template-columns: 146px 160px 170px 130px 130px 130px 130px 130px 130px 130px 110px 122px;
-  column-gap: 4px;
+  grid-template-columns: 146px 140px 150px 100px 100px 100px 100px 100px 100px 100px 100px 118px 110px 110px 110px;
+  column-gap: 3px;
 }
 
 .siatka {
-  row-gap: 4px;
+  row-gap: 3px;
 }
 
 .grupy {
@@ -70,9 +69,9 @@ body {
 }
 
 .g-rynek { grid-column: 2 / 4; }
-.g-smb   { grid-column: 4 / 7; }
-.g-ca    { grid-column: 7 / 11; }
-.g-nasi  { grid-column: 11 / 13; }
+.g-bl    { grid-column: 4 / 12; }
+.g-nasi  { grid-column: 12 / 14; }
+.g-pen   { grid-column: 14 / 16; }
 
 .kol {
   font-size: 24px;
@@ -80,7 +79,7 @@ body {
   line-height: 1.15;
   color: var(--muted);
   text-align: center;
-  padding: 4px 4px 8px;
+  padding: 4px 2px 8px;
   margin: 0;
   align-self: end;
 }
@@ -89,7 +88,7 @@ body {
 .kol-r { text-align: right; }
 
 .wiersz {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--ink);
   padding: 8px 4px;
@@ -97,19 +96,19 @@ body {
 }
 
 .gus {
-  font-size: 26px;
+  font-size: 24px;
   font-variant-numeric: tabular-nums;
   text-align: right;
   color: var(--ink);
-  padding: 8px 10px 8px 4px;
+  padding: 8px 8px 8px 2px;
   margin: 0;
 }
 
 .c {
-  font-size: 26px;
+  font-size: 24px;
   font-variant-numeric: tabular-nums;
   text-align: center;
-  padding: 8px 4px;
+  padding: 8px 2px;
   border-radius: 4px;
   margin: 0;
   color: var(--ink);
@@ -122,31 +121,27 @@ body {
 .h4 { background: var(--h4); color: var(--on-dark); }
 .h5 { background: var(--h5); color: var(--on-dark); }
 
-.cel {
-  border: 4px solid var(--accent);
-  padding: 4px 0;
-  font-weight: 700;
-}
-
 .pub {
   background: var(--neutral);
   color: var(--ink);
 }
 
-.m-smb { grid-column: 4 / 7; }
-.m-ca  { grid-column: 7 / 10; }
-
 .suma {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: right;
-  padding: 8px 10px 8px 4px;
+  padding: 8px 8px 8px 2px;
   margin: 0;
   color: var(--ink);
 }
 
-.razem-l {
+/* GUS podaje firmy aktywne tylko dla 250+: komorki na dwa wiersze (250-999 i 1000+) */
+.r250-firmy { grid-column: 2 / 3;   grid-row: 5 / 7; align-self: center; }
+.r250-pport { grid-column: 14 / 15; grid-row: 5 / 7; align-self: center; }
+.r250-pakt  { grid-column: 15 / 16; grid-row: 5 / 7; align-self: center; }
+
+.razem {
   border-top: 3px solid var(--ink);
 }
 
@@ -160,7 +155,7 @@ body {
   flex-direction: row;
   align-items: center;
   column-gap: 10px;
-  margin: 24px 0 16px;
+  margin: 22px 0 14px;
 }
 
 .leg-txt {
@@ -184,15 +179,8 @@ body {
   color: var(--on-dark);
 }
 
-.chip-cel {
-  font-size: 24px;
-  white-space: nowrap;
-  padding: 0 12px;
-  border: 4px solid var(--accent);
-  border-radius: 4px;
+.chip-pub {
   margin: 0 0 0 18px;
-  color: var(--ink);
-  background: var(--bg);
 }
 
 .przypis {
