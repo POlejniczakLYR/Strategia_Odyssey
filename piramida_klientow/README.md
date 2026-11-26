@@ -134,6 +134,43 @@ tylko proporcje, więc suma pięter = suma GUS (sprawdza to kontrola w `sql/06`)
   bezpośrednio według swojego zatrudnienia.
 - **Public** to jeden blok, więc też bez podziału: liczby wprost z GUS.
 
+## Wstępny wynik: rynek w piętrach (diagnostyka D08–D11, 2026-11-26)
+
+Dane GUS (wariant B) × proporcje z `DB_BAZA` z D09 (zaokrąglone do 0,1 pp.,
+więc końcowe liczby z `sql/06` będą się nieznacznie różnić):
+
+| Piętro | Firmy na rynku (przedsiębiorstwa aktywne) | Firmy (REGON, kontrola) | Pracujący | Średnio na firmę |
+|---|---:|---:|---:|---:|
+| 0–40 | 2 872 767 | 5 427 262 | 5 674 623 | 2 |
+| 41–200 | 18 699 | 18 331 | 1 807 227 | 97 |
+| 201–500 | 3 390 | 2 678 | 1 171 946 | 346 |
+| 501–4000 | 1 533 | 1 128 | 1 740 517 | 1 135 |
+| 4001+ | 92 | 68 | 932 929 | 10 179 |
+| Public | 62 256 | 62 256 | 2 805 762 | – |
+| **Razem** | **2 958 737** | **5 511 723** | **14 133 004** | |
+
+Wnioski z diagnostyki:
+
+- **`DB_BAZA` obejmuje praktycznie cały rynek firm 10+** (D08): liczba firm
+  101–143% GUS, pracujący w klasach 50+ 94–109% GUS. W klasie 0–9 tylko 4%,
+  ale ta klasa w całości trafia do piętra 0–40, więc nie wymaga proporcji.
+- **Liczba firm na rynku: przedsiębiorstwa aktywne, nie REGON.** W klasach
+  250+ `DB_BAZA` ma 140% firm REGON, ale 104% przedsiębiorstw aktywnych. REGON
+  przypisuje klasę według deklarowanej, rzadko aktualizowanej liczby pracujących.
+- **Duże firmy bez duplikatów w grupach** (D10: 0): 732 firmy 1000+, w tym
+  95 powyżej 4000 (1,02 mln pracujących). Zatrudnienie pochodzi głównie ze zrzutu
+  z 01.01.2022 (D17). Do sprawdzenia w `04`: m.in. Lasy Państwowe (zatrudnienie
+  całego PGL przy Dyrekcji Generalnej), dwie spółki Seris Konsalnet o podobnym
+  zatrudnieniu, ITM Polska (sieć franczyzowa).
+- **Kontrola proporcji rozkładem Pareto** (interpolacja między granicami klas
+  GUS): próg 200 → 6,0% (`DB_BAZA` 4,9%), próg 500 → 70,9% (73,4%), próg
+  4000 → 17% (13%), czyli zgodnie. **Próg 40 odstaje:** według Pareto firmy
+  41–49 to 5,2% klasy 10–49, w `DB_BAZA` 2,4%. Przy Pareto piętro 41–200 miałoby
+  około 21,4 tys. firm zamiast 18,7 tys. (+14%). Zostajemy przy `DB_BAZA`, bo
+  naszych klientów przypisujemy do pięter tym samym zatrudnieniem z `DB_BAZA`,
+  więc penetracja jest liczona spójnie. Różnicę podajemy jako zakres niepewności
+  piętra 41–200.
+
 ## SQL w HALO: kolejność uruchamiania
 
 **Najpierw diagnostyka:** `sql/diagnostyka_przed_startem.sql` (same SELECT-y,
