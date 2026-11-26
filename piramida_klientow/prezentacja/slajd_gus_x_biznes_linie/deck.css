@@ -207,3 +207,34 @@ body {
 .szac {
   font-style: italic;
 }
+
+/* slajd 2: potencjal i udzial w rynku */
+.grupy2,
+.siatka2 {
+  display: grid;
+  grid-template-columns: 138px 140px 140px 104px 104px 104px 104px 104px 104px 104px 104px 130px 116px 126px;
+  column-gap: 3px;
+}
+
+.siatka2 {
+  row-gap: 3px;
+}
+
+.grupy2 {
+  margin: 0 0 6px;
+}
+
+.g2-rynek { grid-column: 2 / 4; }
+.g2-bl    { grid-column: 4 / 13; }
+.g2-nasi  { grid-column: 13 / 15; }
+
+.r2-prac { grid-column: 2 / 3;   grid-row: 2 / 4; align-self: center; }
+.r2-pot  { grid-column: 3 / 4;   grid-row: 2 / 4; align-self: center; }
+.r2-u1   { grid-column: 13 / 14; grid-row: 2 / 4; align-self: center; }
+.r2-u2   { grid-column: 14 / 15; grid-row: 2 / 4; align-self: center; }
+
+.u0 { background: var(--h0); border-radius: 4px; }
+.u1 { background: var(--h1); border-radius: 4px; }
+.u2 { background: var(--h2); border-radius: 4px; }
+.u3 { background: var(--h3); border-radius: 4px; }
+.u4 { background: var(--h4); color: var(--on-dark); border-radius: 4px; }
