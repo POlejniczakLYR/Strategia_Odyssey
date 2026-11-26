@@ -5,13 +5,19 @@ SET DEFINE OFF;
 --
 -- WORK_POLAND.T_ODY_KLIENT_LTM - "firma u nas" = NIP platnika z dodatnia
 -- sprzedaza netto w ostatnich 12 ZAMKNIETYCH miesiacach (decyzja 2026-11-26).
--- Jeden wiersz na NIP: sprzedaz i marza LTM + glowny SOLDTO (najwieksza
--- sprzedaz LTM w NIP) i jego obecne przypisanie (typ i region sprzedazy).
+-- Jeden wiersz na NIP: sprzedaz i marza LTM, glowny platnik i glowny SOLDTO
+-- (najwieksza sprzedaz LTM w NIP), przypisanie w sprzedazy (typ, region)
+-- i flaga REGION_PUBLIC (czy ktorykolwiek SOLDTO jest w regionie "Public").
+--
+-- Mapowanie NIP-ow (T_ODY_MAPA_NIP, lista C w 04):
+--   grupa VAT  -> sprzedaz liczona na NIP spolki (NIP_DOCELOWY)
+--   zagraniczny -> TYP_NIP = 'ZAGRANICZNY' (w 03 pietro 98, poza rynkiem PL)
+-- NIP inny niz 10 cyfr -> TYP_NIP = 'NIE_10_CYFR' (tez pietro 98).
 --
 -- Reguly z BAZA_WIEDZY_HALO_RAG (DB_KNOWLEDGE sek. 3, 8):
 --   NIP = REGEXP_REPLACE(T_PAYER.TAX_NUMBER1, '[^0-9]', '')
 --   filtry standardowe T_INVOICE_LINE.
--- Odswiezenie: TRUNCATE + ponowny INSERT (krok 2).
+-- Odswiezenie (np. po uzupelnieniu T_ODY_MAPA_NIP): TRUNCATE + INSERT (krok 2).
 -- =====================================================================
 
 
@@ -20,17 +26,26 @@ SET DEFINE OFF;
 -- ---------------------------------------------------------------------
 CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_KLIENT_LTM',
     'NIP                      VARCHAR2(20)   NOT NULL,
+     TYP_NIP                  VARCHAR2(20),
+     NIP_SAP                  VARCHAR2(20),
+     LICZBA_NIP_SAP           NUMBER,
      LTM_OD                   DATE           NOT NULL,
      LTM_DO                   DATE           NOT NULL,
      SALES_LTM                NUMBER,
      MARGIN_LTM               NUMBER,
+     PAYER_GLOWNY             VARCHAR2(30),
      LICZBA_SOLDTO            NUMBER,
      SOLDTO_GLOWNY            VARCHAR2(30),
      SALES_FORCE_TYPE_CODE    VARCHAR2(100),
      SALES_FORCE_REGION_CODE  VARCHAR2(12),
      SALES_FORCE_REGION       VARCHAR2(400),
+     REGION_PUBLIC            CHAR(1),
      DATA_WCZYTANIA           DATE           DEFAULT SYSDATE');
--- LTM_OD / LTM_DO: okres [LTM_OD, LTM_DO) - LTM_DO = 1. dzien biezacego miesiaca
+-- TYP_NIP      : NIP / GRUPA_VAT / ZAGRANICZNY / NIE_10_CYFR
+-- NIP_SAP      : NIP z T_PAYER (rozny od NIP dla grup VAT); przy kilku - najwieksza sprzedaz
+-- LTM_OD/LTM_DO: okres [LTM_OD, LTM_DO) - LTM_DO = 1. dzien biezacego miesiaca
+-- REGION_PUBLIC: 'T' gdy ktorykolwiek SOLDTO NIP-u jest w regionie sprzedazy
+--                z "PUBLI" w nazwie (dzis region 1620 "Public", diagnostyka D15)
 
 
 -- ---------------------------------------------------------------------
@@ -39,15 +54,17 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_KLIENT_LTM',
 -- TRUNCATE TABLE WORK_POLAND.T_ODY_KLIENT_LTM;
 
 INSERT INTO WORK_POLAND.T_ODY_KLIENT_LTM
-    (NIP, LTM_OD, LTM_DO, SALES_LTM, MARGIN_LTM, LICZBA_SOLDTO, SOLDTO_GLOWNY,
-     SALES_FORCE_TYPE_CODE, SALES_FORCE_REGION_CODE, SALES_FORCE_REGION)
+    (NIP, TYP_NIP, NIP_SAP, LICZBA_NIP_SAP, LTM_OD, LTM_DO, SALES_LTM, MARGIN_LTM,
+     PAYER_GLOWNY, LICZBA_SOLDTO, SOLDTO_GLOWNY,
+     SALES_FORCE_TYPE_CODE, SALES_FORCE_REGION_CODE, SALES_FORCE_REGION, REGION_PUBLIC)
 WITH p AS (
     SELECT ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -12) AS LTM_OD,
            TRUNC(SYSDATE, 'MM')                  AS LTM_DO
     FROM   dual
 ),
-linie AS (
-    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')             AS NIP,
+linie0 AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')             AS NIP_SAP,
+           til.PAYER_NUMBER,
            til.SOLDTO_NUMBER,
            til.SALES_AMOUNT,
            til.MARGIN_AMOUNT
@@ -63,37 +80,80 @@ linie AS (
       AND  til.INVOICE_DATE >= p.LTM_OD
       AND  til.INVOICE_DATE <  p.LTM_DO
 ),
+mapa AS (
+    SELECT NIP_SAP, MAX(NIP_DOCELOWY) AS NIP_DOCELOWY, MAX(TYP) AS TYP
+    FROM   WORK_POLAND.T_ODY_MAPA_NIP
+    GROUP  BY NIP_SAP
+),
+linie AS (                                      -- NIP po mapowaniu + typ NIP-u
+    SELECT CASE WHEN m.TYP = 'GRUPA_VAT' AND m.NIP_DOCELOWY IS NOT NULL
+                THEN m.NIP_DOCELOWY ELSE l.NIP_SAP END                AS NIP,
+           CASE WHEN m.TYP = 'ZAGRANICZNY'          THEN 4
+                WHEN m.TYP = 'GRUPA_VAT'            THEN 3
+                WHEN LENGTH(l.NIP_SAP) <> 10        THEN 2
+                ELSE                                     1 END         AS TYP_NIP_NR,
+           l.NIP_SAP, l.PAYER_NUMBER, l.SOLDTO_NUMBER, l.SALES_AMOUNT, l.MARGIN_AMOUNT
+    FROM   linie0 l
+    LEFT JOIN mapa m ON m.NIP_SAP = l.NIP_SAP
+    WHERE  l.NIP_SAP IS NOT NULL
+),
 nip AS (
     SELECT NIP,
-           SUM(SALES_AMOUNT)  AS SALES_LTM,
-           SUM(MARGIN_AMOUNT) AS MARGIN_LTM
+           MAX(TYP_NIP_NR)                                            AS TYP_NIP_NR,
+           COUNT(DISTINCT NIP_SAP)                                    AS LICZBA_NIP_SAP,
+           SUM(SALES_AMOUNT)                                          AS SALES_LTM,
+           SUM(MARGIN_AMOUNT)                                         AS MARGIN_LTM
     FROM   linie
-    WHERE  NIP IS NOT NULL
+    GROUP  BY NIP
+),
+nip_sap AS (                                    -- NIP z SAP o najwiekszej sprzedazy
+    SELECT NIP, MAX(NIP_SAP) KEEP (DENSE_RANK LAST ORDER BY SALES NULLS FIRST) AS NIP_SAP
+    FROM  (SELECT NIP, NIP_SAP, SUM(SALES_AMOUNT) AS SALES FROM linie GROUP BY NIP, NIP_SAP)
+    GROUP  BY NIP
+),
+platnik AS (                                    -- glowny platnik = najwieksza sprzedaz LTM
+    SELECT NIP, MAX(PAYER_NUMBER) KEEP (DENSE_RANK LAST ORDER BY SALES NULLS FIRST) AS PAYER_GLOWNY
+    FROM  (SELECT NIP, PAYER_NUMBER, SUM(SALES_AMOUNT) AS SALES FROM linie GROUP BY NIP, PAYER_NUMBER)
     GROUP  BY NIP
 ),
 soldto AS (
-    SELECT NIP, SOLDTO_NUMBER, SUM(SALES_AMOUNT) AS SALES
-    FROM   linie
-    WHERE  NIP IS NOT NULL
-    GROUP  BY NIP, SOLDTO_NUMBER
+    SELECT l.NIP, l.SOLDTO_NUMBER, SUM(l.SALES_AMOUNT) AS SALES,
+           MAX(CASE WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%PUBLI%' THEN 'T' ELSE 'N' END) AS REGION_PUBLIC
+    FROM   linie l
+    LEFT JOIN POLAND.T_SOLDTO ts
+           ON  ts.SOLDTO_NUMBER = l.SOLDTO_NUMBER
+           AND ts.COUNTRY_CODE  = 'PL'
+    LEFT JOIN SHARED.T_SALES_FORCE_REGION sfr
+           ON  sfr.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+           AND sfr.COUNTRY_CODE            = 'PL'
+           AND sfr.LANGUAGE_CODE           = 'POLISH'
+    GROUP  BY l.NIP, l.SOLDTO_NUMBER
 ),
 glowny AS (                                     -- glowny SOLDTO = najwieksza sprzedaz LTM
     SELECT NIP,
            MAX(SOLDTO_NUMBER) KEEP (DENSE_RANK LAST ORDER BY SALES NULLS FIRST) AS SOLDTO_GLOWNY,
-           COUNT(*)                                                           AS LICZBA_SOLDTO
+           COUNT(*)                                                           AS LICZBA_SOLDTO,
+           MAX(REGION_PUBLIC)                                                 AS REGION_PUBLIC
     FROM   soldto
     GROUP  BY NIP
 )
-SELECT n.NIP, p.LTM_OD, p.LTM_DO,
+SELECT n.NIP,
+       DECODE(n.TYP_NIP_NR, 4, 'ZAGRANICZNY', 3, 'GRUPA_VAT', 2, 'NIE_10_CYFR', 'NIP') AS TYP_NIP,
+       ns.NIP_SAP,
+       n.LICZBA_NIP_SAP,
+       p.LTM_OD, p.LTM_DO,
        n.SALES_LTM, n.MARGIN_LTM,
+       pl.PAYER_GLOWNY,
        g.LICZBA_SOLDTO, g.SOLDTO_GLOWNY,
        ts.SALES_FORCE_TYPE_CODE,
        ts.SALES_FORCE_REGION_CODE,
-       sfr.SALES_FORCE_REGION
+       sfr.SALES_FORCE_REGION,
+       g.REGION_PUBLIC
 FROM   nip n
 CROSS JOIN p
-JOIN   glowny g
-       ON  g.NIP = n.NIP
+JOIN   glowny g   ON g.NIP  = n.NIP
+JOIN   nip_sap ns ON ns.NIP = n.NIP
+JOIN   platnik pl ON pl.NIP = n.NIP
 LEFT JOIN POLAND.T_SOLDTO ts
        ON  ts.SOLDTO_NUMBER = g.SOLDTO_GLOWNY
        AND ts.COUNTRY_CODE  = 'PL'
@@ -107,25 +167,22 @@ COMMIT;
 
 
 -- ---------------------------------------------------------------------
--- KONTROLA 1: liczba klientow i sprzedaz; NIP-y inne niz 10 cyfr
--- (zagraniczne / bledne) nie trafia do pieter - widac ile to sprzedazy
+-- KONTROLA 1: klienci wg typu NIP-u (udzial w sprzedazy)
 -- ---------------------------------------------------------------------
-SELECT CASE WHEN LENGTH(NIP) = 10 THEN 'NIP_10_CYFR' ELSE 'NIP_INNY' END     AS GRUPA,
+SELECT TYP_NIP,
        COUNT(*)                                                             AS LICZBA_NIP,
-       ROUND(SUM(SALES_LTM))                                                AS SALES_LTM,
-       ROUND(RATIO_TO_REPORT(SUM(SALES_LTM)) OVER () * 100, 2)              AS PCT_SALES,
+       ROUND(RATIO_TO_REPORT(SUM(SALES_LTM)) OVER () * 100, 2)              AS PCT_SPRZEDAZY,
+       SUM(CASE WHEN REGION_PUBLIC = 'T' THEN 1 ELSE 0 END)                 AS W_REGIONIE_PUBLIC,
        MIN(LTM_OD) AS LTM_OD, MIN(LTM_DO) AS LTM_DO
 FROM   WORK_POLAND.T_ODY_KLIENT_LTM
-GROUP  BY CASE WHEN LENGTH(NIP) = 10 THEN 'NIP_10_CYFR' ELSE 'NIP_INNY' END;
+GROUP  BY TYP_NIP
+ORDER  BY LICZBA_NIP DESC;
 
 
 -- ---------------------------------------------------------------------
 -- KONTROLA 2: sprzedaz LTM bez NIP-u platnika (poza piramida)
 -- ---------------------------------------------------------------------
 SELECT ROUND(SUM(CASE WHEN REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '') IS NULL
-                      THEN til.SALES_AMOUNT END))                           AS SALES_BEZ_NIP,
-       ROUND(SUM(til.SALES_AMOUNT))                                         AS SALES_TOTAL,
-       ROUND(SUM(CASE WHEN REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '') IS NULL
                       THEN til.SALES_AMOUNT END)
              / NULLIF(SUM(til.SALES_AMOUNT), 0) * 100, 2)                   AS PCT_BEZ_NIP
 FROM   POLAND.T_INVOICE_LINE til

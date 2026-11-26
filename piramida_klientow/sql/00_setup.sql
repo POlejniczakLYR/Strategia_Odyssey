@@ -7,6 +7,8 @@ SET DEFINE OFF;
 --   WORK_POLAND.T_ODY_PIRAMIDA_PROGI  - pietra piramidy i progi zatrudnienia
 --   WORK_POLAND.T_ODY_KOREKTA_FIRMY   - reczne korekty po weryfikacji
 --                                       (zatrudnienie, flaga Public)
+--   WORK_POLAND.T_ODY_MAPA_NIP        - mapowanie NIP-ow z SAP: grupa VAT ->
+--                                       NIP spolki, NIP-y zagraniczne
 --   WORK_POLAND.T_ODY_RYNEK_GUS       - dane rynku z GUS w klasach GUS
 --                                       (wypelnia 01_rynek_gus_dane.sql)
 --
@@ -14,7 +16,7 @@ SET DEFINE OFF;
 --
 -- KOLEJNOSC CALEGO PROJEKTU:
 --   00 setup -> 01 dane GUS -> 02 klienci LTM -> 03 profil firm
---   -> 04 lista 4001+ (weryfikacja, korekty, ew. ponownie 03)
+--   -> 04 listy do weryfikacji (korekty i mapowania, potem ponownie 02/03)
 --   -> 05 proporcje -> 06 piramida
 -- =====================================================================
 
@@ -26,7 +28,10 @@ SET DEFINE OFF;
 --         sektor publiczny w dzialach PKD 84-88, 90-93 (administracja,
 --         edukacja, zdrowie i pomoc spoleczna, kultura); spolki panstwowe
 --         i komunalne z innych dzialow sa w pietrach 1-5 wg wielkosci
---   99  : NIEPRZYPISANE - nasi klienci bez zatrudnienia w DB_BAZA
+--   98  : POZA_RYNKIEM_PL - nasi klienci z NIP-em zagranicznym (lub innym niz
+--         10 cyfr); poza rynkiem GUS, pokazujemy tylko udzial w sprzedazy
+--   99  : DO_UZUPELNIENIA - nasi klienci bez zatrudnienia, ktorych nie da sie
+--         oszacowac (najwieksi wg sprzedazy) - lista B w 04
 -- ---------------------------------------------------------------------
 CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_PIRAMIDA_PROGI',
     'PIETRO_NR       NUMBER(2)      NOT NULL,
@@ -41,15 +46,16 @@ INSERT INTO WORK_POLAND.T_ODY_PIRAMIDA_PROGI (PIETRO_NR, PIETRO, ZATR_OD, ZATR_D
 INSERT INTO WORK_POLAND.T_ODY_PIRAMIDA_PROGI (PIETRO_NR, PIETRO, ZATR_OD, ZATR_DO) VALUES ( 4, '501-4000',    501, 4000);
 INSERT INTO WORK_POLAND.T_ODY_PIRAMIDA_PROGI (PIETRO_NR, PIETRO, ZATR_OD, ZATR_DO) VALUES ( 5, '4001+',      4001, NULL);
 INSERT INTO WORK_POLAND.T_ODY_PIRAMIDA_PROGI (PIETRO_NR, PIETRO, ZATR_OD, ZATR_DO) VALUES ( 6, 'PUBLIC',     NULL, NULL);
-INSERT INTO WORK_POLAND.T_ODY_PIRAMIDA_PROGI (PIETRO_NR, PIETRO, ZATR_OD, ZATR_DO) VALUES (99, 'NIEPRZYPISANE', NULL, NULL);
+INSERT INTO WORK_POLAND.T_ODY_PIRAMIDA_PROGI (PIETRO_NR, PIETRO, ZATR_OD, ZATR_DO) VALUES (98, 'POZA_RYNKIEM_PL', NULL, NULL);
+INSERT INTO WORK_POLAND.T_ODY_PIRAMIDA_PROGI (PIETRO_NR, PIETRO, ZATR_OD, ZATR_DO) VALUES (99, 'DO_UZUPELNIENIA', NULL, NULL);
 COMMIT;
 
 
 -- ---------------------------------------------------------------------
--- KROK 2. Korekty reczne (po weryfikacji listy z 04_lista_4001.sql
--- albo po przegladzie flagi Public w 03). Pusta na starcie.
---   ZATRUDNIENIE : nadpisuje DB_BAZA (np. DB_BAZA podaje zatrudnienie
---                  calej grupy kapitalowej przy kazdej spolce)
+-- KROK 2. Korekty reczne (listy A i B z 04_listy_do_weryfikacji.sql
+-- albo przeglad flagi Public w 03). Pusta na starcie.
+--   ZATRUDNIENIE : nadpisuje DB_BAZA albo uzupelnia brak (zrodlo: eKRS -
+--                  przecietne zatrudnienie ze sprawozdania finansowego)
 --   FLAGA_PUBLIC : 'T' / 'N' nadpisuje wyliczona flage (NULL = bez zmian)
 -- Przyklad:
 --   INSERT INTO WORK_POLAND.T_ODY_KOREKTA_FIRMY (NIP, ZATRUDNIENIE, FLAGA_PUBLIC, UWAGI)
@@ -59,6 +65,26 @@ CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_KOREKTA_FIRMY',
     'NIP             VARCHAR2(20)   NOT NULL,
      ZATRUDNIENIE    NUMBER,
      FLAGA_PUBLIC    CHAR(1),
+     UWAGI           VARCHAR2(800),
+     DATA_WCZYTANIA  DATE           DEFAULT SYSDATE');
+
+
+-- ---------------------------------------------------------------------
+-- KROK 2b. Mapowanie NIP-ow z SAP (lista C z 04). Pusta na starcie.
+--   TYP = 'GRUPA_VAT'   : klient placi NIP-em grupy VAT; NIP_DOCELOWY = NIP
+--                         spolki, ktora traktujemy jako klienta (zwykle
+--                         przedstawiciel grupy albo spolka, ktora kupuje)
+--   TYP = 'ZAGRANICZNY' : NIP zagraniczny (NIP_DOCELOWY puste) -> pietro 98
+-- Przyklady:
+--   INSERT INTO WORK_POLAND.T_ODY_MAPA_NIP (NIP_SAP, NIP_DOCELOWY, TYP, UWAGI)
+--   VALUES ('1234567890', '0987654321', 'GRUPA_VAT', 'Grupa VAT X - przedstawiciel X S.A.');
+--   INSERT INTO WORK_POLAND.T_ODY_MAPA_NIP (NIP_SAP, NIP_DOCELOWY, TYP, UWAGI)
+--   VALUES ('1070000000', NULL, 'ZAGRANICZNY', 'firma niemiecka');
+-- ---------------------------------------------------------------------
+CALL WORK_POLAND.WORK_SCHEMA_CREATE_TABLE ('T_ODY_MAPA_NIP',
+    'NIP_SAP         VARCHAR2(20)   NOT NULL,
+     NIP_DOCELOWY    VARCHAR2(20),
+     TYP             VARCHAR2(20)   NOT NULL,
      UWAGI           VARCHAR2(800),
      DATA_WCZYTANIA  DATE           DEFAULT SYSDATE');
 

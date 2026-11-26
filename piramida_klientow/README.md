@@ -208,9 +208,14 @@ Wnioski:
   - D21: 200 największych spółek to 6,9% sprzedaży (połowa sprzedaży spółek
     nieprzypisanych), 1000 największych to 10,4%; reszta (ok. 7 tys. firm)
     ma średnio mniejszą sprzedaż na NIP niż klienci 0–40;
-  - **w HALO jest drugie źródło zatrudnienia: BvD (Orbis)** w `T_PAYER` i `T_COMPANY`
-    (`BVD_NUMBER_OF_EMPLOYEES`, `BVD_COMPANY_ID` = „PL” + REGON); D23–D26 sprawdzają
-    pokrycie, zgodność z `DB_BAZA` i to, czy przez REGON z BvD da się przypisać grupy VAT;
+  - BvD (Orbis) w `T_PAYER` / `T_COMPANY` **nie używamy**: słabe źródło
+    (decyzja 2026-11-26);
+  - **jak przypisujemy klientów bez zatrudnienia** (`sql/03`, kolumna `PIETRO_ZRODLO`):
+    osoby fizyczne → 0–40 (szacunek); spółki spoza 200 największych według
+    sprzedaży → 0–40 (szacunek, sprzedaż na NIP niższa niż średnio w 0–40);
+    200 największych → `DO_UZUPELNIENIA` (lista B w `sql/04`, zatrudnienie z eKRS);
+    grupy VAT → mapowanie na NIP spółki (lista C, `T_ODY_MAPA_NIP`); NIP-y
+    zagraniczne → osobny wiersz „poza rynkiem PL” (piętro 98);
   - 30 największych nieprzypisanych to 27% ich sprzedaży.
   - Do wyjaśnienia: czy wśród klientów są odsprzedawcy (np. hurtownie z działu
     46), których nie powinno być w piramidzie.
@@ -234,13 +239,13 @@ jest tylko jako udział %. Dopiero gdy wyniki mają sens, budujemy tabele `00`�
 
 | Plik | Co robi | Tabela |
 |---|---|---|
-| `sql/00_setup.sql` | Progi pięter, tabela korekt, tabela na dane GUS (jednorazowo) | `T_ODY_PIRAMIDA_PROGI`, `T_ODY_KOREKTA_FIRMY`, `T_ODY_RYNEK_GUS` |
+| `sql/00_setup.sql` | Progi pięter (1–6, 98 poza rynkiem PL, 99 do uzupełnienia), tabela korekt, mapowanie NIP-ów, tabela na dane GUS (jednorazowo) | `T_ODY_PIRAMIDA_PROGI`, `T_ODY_KOREKTA_FIRMY`, `T_ODY_MAPA_NIP`, `T_ODY_RYNEK_GUS` |
 | `sql/01_rynek_gus_dane.sql` | INSERT-y danych GUS (plik generowany, wariant B) | `T_ODY_RYNEK_GUS` |
-| `sql/02_klienci_ltm.sql` | Nasi klienci: NIP z dodatnią sprzedażą w ostatnich 12 zamkniętych miesiącach, główny SOLDTO i jego region sprzedaży | `T_ODY_KLIENT_LTM` |
-| `sql/03_profil_firm.sql` | Profil każdej firmy (rynek z `DB_BAZA` + nasi klienci): zatrudnienie, PKD, sektor, flaga Public, piętro. Kontrole flagi Public | `T_ODY_FIRMA_PROFIL` |
-| `sql/04_lista_4001.sql` | Lista firm ≥ 3000 do ręcznej weryfikacji + porównanie z GUS 1000+. Poprawki → `T_ODY_KOREKTA_FIRMY` → ponownie `03` | – |
+| `sql/02_klienci_ltm.sql` | Nasi klienci: NIP z dodatnią sprzedażą w ostatnich 12 zamkniętych miesiącach (po mapowaniu grup VAT), typ NIP-u, główny płatnik i SOLDTO, region sprzedaży, flaga „region Public” | `T_ODY_KLIENT_LTM` |
+| `sql/03_profil_firm.sql` | Profil każdej firmy (rynek z `DB_BAZA` + nasi klienci): zatrudnienie, PKD, sektor, flaga Public, piętro i źródło piętra (`PIETRO_ZRODLO`). Kontrole flagi Public i udziału szacunków | `T_ODY_FIRMA_PROFIL` |
+| `sql/04_listy_do_weryfikacji.sql` | Lista A: firmy ≥ 3000 (weryfikacja 4001+). Lista B: 200 największych klientów bez zatrudnienia (eKRS). Lista C: grupy VAT i NIP-y zagraniczne (mapowanie). Poprawki → `T_ODY_KOREKTA_FIRMY` / `T_ODY_MAPA_NIP` → ponownie `02`/`03` | – |
 | `sql/05_proporcje.sql` | Proporcje podziału klas GUS na piętra (z `DB_BAZA`) | `T_ODY_PROPORCJE` |
-| `sql/06_piramida.sql` | Piramida: rynek, nasi klienci, penetracja, pokrycie pracujących, sprzedaż; kontrole; podwarstwy 0–9 / 10–40 | `T_ODY_PIRAMIDA` |
+| `sql/06_piramida.sql` | Piramida: rynek, nasi klienci (w tym szacunki), penetracja, pokrycie pracujących, sprzedaż, w tym obsługa przez region Public; kontrole; podwarstwy 0–9 / 10–40 / szacunek | `T_ODY_PIRAMIDA` |
 
 **Flaga Public (wariant B)** w `03`: NIP jest w Katalogu Podmiotów
 Publicznych (`PUBLIC`, `ACTIVE`) albo ma w `T_CEIDG_GUS` publiczną formę
@@ -259,11 +264,16 @@ Przy pierwszym uruchomieniu warto przejść kontrole po każdym kroku.
 ## Kolejność pracy
 
 1. ~~**Dane GUS**: REGON, pracujący, szkielet rynku w klasach GUS.~~ Gotowe.
-2. ~~**SQL**: progi, klienci, profil firm, lista 4001+, proporcje, piramida.~~ Gotowe.
-3. **Uruchomienie w HALO** `00` → `06`, z kontrolami po każdym kroku.
-4. **Weryfikacja 4001+ i flagi Public**, korekty, ponowne `03` → `05` → `06`.
-5. **Prezentacja:** piramida + tabela, z przypisem, co jest szacunkiem
-   (podział klas GUS na progi, pracujący Public według wielkości).
+2. ~~**Diagnostyka** D01–D22 i poprawki reguł.~~ Gotowe.
+3. **Pierwsze uruchomienie w HALO:** `00` → `01` → `02` → `03`, z kontrolami.
+4. **Lista C** (`04`): grupy VAT i NIP-y zagraniczne → `T_ODY_MAPA_NIP` →
+   ponownie `02` i `03`.
+5. **Listy B i A** (`04`): zatrudnienie 200 największych klientów bez danych
+   (eKRS) i weryfikacja firm ≥ 3000 → `T_ODY_KOREKTA_FIRMY` → ponownie `03`.
+6. **Wynik:** `05` → `06`, z kontrolami.
+7. **Prezentacja:** piramida + tabela, z przypisem, co jest szacunkiem
+   (podział klas GUS na progi, pracujący Public według wielkości, klienci
+   bez zatrudnienia przypisani do 0–40).
 
 ## Ograniczenia, o których mówimy przy prezentacji
 
