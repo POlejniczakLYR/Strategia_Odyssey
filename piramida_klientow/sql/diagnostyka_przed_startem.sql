@@ -154,7 +154,7 @@ f AS (
                       OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                  AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB)
                      IN ('84','85','86','87','88','90','91','92','93')
-                THEN 'T' ELSE 'N' END                                       AS PUBLIC,
+                THEN 'T' ELSE 'N' END                                       AS FLAGA_PUBLIC,
            CASE WHEN NVL(cg.DELETION_FLAG, 'N') = 'Y' OR cg.DATA_SKRESLENIA IS NOT NULL
                   OR cg.DATA_ZAKONCZENIA IS NOT NULL
                   OR (cg.DATA_ZAWIESZENIA IS NOT NULL
@@ -169,11 +169,11 @@ k AS (
                 WHEN ZATR < 1000 THEN '250-999' ELSE '1000+' END            AS KLASA_GUS,
            ZATR
     FROM   f
-    WHERE  ZATR > 0 AND PUBLIC = 'N' AND NIEAKTYWNA = 'N'
+    WHERE  ZATR > 0 AND FLAGA_PUBLIC = 'N' AND NIEAKTYWNA = 'N'
     UNION ALL
     SELECT '250+', ZATR
     FROM   f
-    WHERE  ZATR >= 250 AND PUBLIC = 'N' AND NIEAKTYWNA = 'N'
+    WHERE  ZATR >= 250 AND FLAGA_PUBLIC = 'N' AND NIEAKTYWNA = 'N'
 ),
 gus AS (
     SELECT '0-9'     AS KLASA_GUS, 1 AS LP, 2779281 AS GUS_FIRMY_AKTYWNE, 5326492 AS GUS_FIRMY_REGON, 3709518 AS GUS_PRACUJACY FROM dual UNION ALL
@@ -222,7 +222,7 @@ f AS (
                       OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                  AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB)
                      IN ('84','85','86','87','88','90','91','92','93')
-                THEN 'T' ELSE 'N' END                                       AS PUBLIC,
+                THEN 'T' ELSE 'N' END                                       AS FLAGA_PUBLIC,
            CASE WHEN NVL(cg.DELETION_FLAG, 'N') = 'Y' OR cg.DATA_SKRESLENIA IS NOT NULL
                   OR cg.DATA_ZAKONCZENIA IS NOT NULL
                   OR (cg.DATA_ZAWIESZENIA IS NOT NULL
@@ -239,7 +239,7 @@ p AS (
            CASE WHEN ZATR <= 40 THEN 1 WHEN ZATR <= 200 THEN 2 WHEN ZATR <= 500 THEN 3
                 WHEN ZATR <= 4000 THEN 4 ELSE 5 END                         AS PIETRO
     FROM   f
-    WHERE  ZATR > 0 AND PUBLIC = 'N' AND NIEAKTYWNA = 'N'
+    WHERE  ZATR > 0 AND FLAGA_PUBLIC = 'N' AND NIEAKTYWNA = 'N'
 ),
 k AS (
     SELECT KLASA_GUS, PIETRO, ZATR FROM p
@@ -290,7 +290,7 @@ f AS (
                       OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                  AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB)
                      IN ('84','85','86','87','88','90','91','92','93')
-                THEN 'T' ELSE 'N' END                                       AS PUBLIC,
+                THEN 'T' ELSE 'N' END                                       AS FLAGA_PUBLIC,
            CASE WHEN NVL(cg.DELETION_FLAG, 'N') = 'Y' OR cg.DATA_SKRESLENIA IS NOT NULL
                   OR cg.DATA_ZAKONCZENIA IS NOT NULL
                   OR (cg.DATA_ZAWIESZENIA IS NOT NULL
@@ -306,7 +306,7 @@ g AS (
            CASE WHEN GRUPA IS NOT NULL
                 THEN COUNT(*) OVER (PARTITION BY GRUPA, ZATR) END           AS DUPL
     FROM   f
-    WHERE  PUBLIC = 'N' AND NIEAKTYWNA = 'N'
+    WHERE  FLAGA_PUBLIC = 'N' AND NIEAKTYWNA = 'N'
 )
 SELECT COUNT(*)                                                         AS DB_FIRMY_1000,
        SUM(ZATR)                                                        AS DB_PRAC_1000,
@@ -353,7 +353,7 @@ f AS (
                       OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                  AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB)
                      IN ('84','85','86','87','88','90','91','92','93')
-                THEN 'T' ELSE 'N' END                                       AS PUBLIC,
+                THEN 'T' ELSE 'N' END                                       AS FLAGA_PUBLIC,
            CASE WHEN NVL(cg.DELETION_FLAG, 'N') = 'Y' OR cg.DATA_SKRESLENIA IS NOT NULL
                   OR cg.DATA_ZAKONCZENIA IS NOT NULL
                   OR (cg.DATA_ZAWIESZENIA IS NOT NULL
@@ -369,7 +369,7 @@ g AS (
            CASE WHEN GRUPA IS NOT NULL
                 THEN COUNT(*) OVER (PARTITION BY GRUPA, ZATR) END           AS NIP_W_GRUPIE_Z_TYM_ZATR
     FROM   f
-    WHERE  PUBLIC = 'N' AND NIEAKTYWNA = 'N'
+    WHERE  FLAGA_PUBLIC = 'N' AND NIEAKTYWNA = 'N'
 )
 SELECT NIP, SUBSTR(NAZWA, 1, 60) AS NAZWA, ZATR, ROK, DZIAL,
        SUBSTR(GRUPA, 1, 40) AS GRUPA, NIP_W_GRUPIE_Z_TYM_ZATR
@@ -483,7 +483,7 @@ f AS (
                       OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
                  AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP, db.DZIAL_DB)
                      IN ('84','85','86','87','88','90','91','92','93')
-                THEN 'T' ELSE 'N' END                                       AS PUBLIC
+                THEN 'T' ELSE 'N' END                                       AS FLAGA_PUBLIC
     FROM   nip n
     LEFT JOIN db  ON db.NIP  = n.NIP
     LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP = n.NIP
@@ -491,7 +491,7 @@ f AS (
 ),
 p AS (
     SELECT f.*,
-           CASE WHEN PUBLIC = 'T'      THEN '6 PUBLIC'
+           CASE WHEN FLAGA_PUBLIC = 'T'      THEN '6 PUBLIC'
                 WHEN ZATR IS NULL      THEN '99 NIEPRZYPISANE'
                 WHEN ZATR <= 40        THEN '1 0-40'
                 WHEN ZATR <= 200       THEN '2 41-200'
