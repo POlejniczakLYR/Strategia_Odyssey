@@ -3796,3 +3796,187 @@ GROUP  BY n.KLASA,
                WHEN n.LINIA_GRUPY = 'INTERNATIONAL' THEN '1 KLIENT INTERNATIONAL'
                ELSE                                      '1 KLIENT' END
 ORDER  BY 1, 2, 3;
+
+
+
+-- === D40 Firmy 4001+ (DB_BAZA) w Kwarantannie lub niezarejestrowane - lista NIP-ow
+WITH linie AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
+           til.SOLDTO_NUMBER,
+           til.SALES_AMOUNT
+    FROM   POLAND.T_INVOICE_LINE til
+    JOIN   POLAND.T_PAYER tp
+           ON  tp.PAYER_NUMBER = til.PAYER_NUMBER
+           AND tp.COUNTRY_CODE = til.COUNTRY_CODE
+    WHERE  til.COUNTRY_CODE        = 'PL'
+      AND  til.BUSINESS_SCOPE_FLAG = 'Y'
+      AND  NVL(til.CANCELLED_FLAG, 'N')   <> 'Y'
+      AND  NVL(til.DL_DELETION_FLAG, 'N') <> 'Y'
+      AND  til.INVOICE_DATE >= ADD_MONTHS(TRUNC(SYSDATE, 'MM'), -12)
+      AND  til.INVOICE_DATE <  TRUNC(SYSDATE, 'MM')
+),
+sprz AS (
+    SELECT NIP, SOLDTO_NUMBER, SUM(SALES_AMOUNT) AS SALES
+    FROM   linie
+    WHERE  NIP IS NOT NULL
+    GROUP  BY NIP, SOLDTO_NUMBER
+),
+aktywni AS (
+    SELECT NIP, SUM(SALES) AS SALES FROM sprz GROUP BY NIP HAVING SUM(SALES) > 0
+),
+kartoteka AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
+           ts.SOLDTO_NUMBER
+    FROM   POLAND.T_SOLDTO ts
+    JOIN   POLAND.T_PAYER tp
+           ON  tp.PAYER_NUMBER = ts.PAYER_NUMBER
+           AND tp.COUNTRY_CODE = ts.COUNTRY_CODE
+    WHERE  ts.COUNTRY_CODE = 'PL'
+      AND  NVL(ts.DL_DELETION_FLAG, 'N') <> 'Y'
+),
+soldto_all AS (
+    SELECT NIP, SOLDTO_NUMBER, SUM(SALES) AS SALES
+    FROM  (SELECT NIP, SOLDTO_NUMBER, SALES FROM sprz
+           UNION ALL
+           SELECT NIP, SOLDTO_NUMBER, 0 FROM kartoteka)
+    WHERE  LENGTH(NIP) = 10
+    GROUP  BY NIP, SOLDTO_NUMBER
+),
+region_bl AS (
+    SELECT sfr.SALES_FORCE_REGION_CODE,
+           CASE
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE 'IS %'
+                 OR UPPER(sfr.SALES_FORCE_REGION) = 'IS'              THEN 'IS'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE 'FS %'
+                 OR UPPER(sfr.SALES_FORCE_REGION) = 'FS'              THEN 'FS'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%MID MARKET%'   THEN 'MM'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%QUARANT%'      THEN 'KWARANTANNA'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%OTHER SMB%'    THEN 'INNE_SMB'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%K' || CHR(38) || 'N%' THEN 'KN'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%STRATEG%'      THEN 'STRATEGIC'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%INTERNAT%'     THEN 'INTERNATIONAL'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%PUBLI%'        THEN 'PUBLIC'
+               WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%OTHER CA%'     THEN 'INNE_CA'
+               ELSE                                                          'BRAK'
+           END                                                              AS LINIA
+    FROM   SHARED.T_SALES_FORCE_REGION sfr
+    WHERE  sfr.COUNTRY_CODE  = 'PL'
+      AND  sfr.LANGUAGE_CODE = 'POLISH'
+),
+nip_sap AS (                                    -- NIP -> jedna grupa (kilku platnikow z tym samym NIP
+                                                --   liczymy raz): pierwszenstwo ma SOLDTO w biznes linii,
+                                                --   potem SOLDTO w grupie (lider), potem sprzedaz
+    SELECT sa.NIP,
+           MAX(COALESCE(ts.NATIONAL_LEADER_NUMBER, sa.SOLDTO_NUMBER)) KEEP (DENSE_RANK LAST ORDER BY
+               CASE WHEN NVL(rb.LINIA, 'BRAK') IN ('INNE_SMB', 'INNE_CA', 'KWARANTANNA', 'BRAK') THEN 0 ELSE 1 END,
+               CASE WHEN ts.NATIONAL_LEADER_NUMBER IS NOT NULL THEN 1 ELSE 0 END,
+               sa.SALES NULLS FIRST, sa.SOLDTO_NUMBER)                      AS TOP_LEVEL,
+           MAX(NVL(rb.LINIA, 'BRAK')) KEEP (DENSE_RANK LAST ORDER BY
+               CASE WHEN NVL(rb.LINIA, 'BRAK') IN ('INNE_SMB', 'INNE_CA', 'KWARANTANNA', 'BRAK') THEN 0 ELSE 1 END,
+               CASE WHEN ts.NATIONAL_LEADER_NUMBER IS NOT NULL THEN 1 ELSE 0 END,
+               sa.SALES NULLS FIRST, sa.SOLDTO_NUMBER)                      AS LINIA_NIP
+    FROM   soldto_all sa
+    LEFT JOIN POLAND.T_SOLDTO ts
+           ON  ts.SOLDTO_NUMBER = sa.SOLDTO_NUMBER
+           AND ts.COUNTRY_CODE  = 'PL'
+    LEFT JOIN region_bl rb
+           ON  rb.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+    GROUP  BY sa.NIP
+),
+lider AS (                                      -- linia SOLDTO lidera grupy
+    SELECT t.TOP_LEVEL,
+           MAX(rb.LINIA)                                                    AS LINIA_LIDERA
+    FROM  (SELECT DISTINCT TOP_LEVEL FROM nip_sap) t
+    LEFT JOIN POLAND.T_SOLDTO ts
+           ON  ts.SOLDTO_NUMBER = t.TOP_LEVEL
+           AND ts.COUNTRY_CODE  = 'PL'
+    LEFT JOIN region_bl rb
+           ON  rb.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+    GROUP  BY t.TOP_LEVEL
+),
+dominujaca AS (                                 -- linia NIP-u z najwieksza sprzedaza w grupie
+    SELECT ns.TOP_LEVEL,
+           MAX(ns.LINIA_NIP) KEEP (DENSE_RANK LAST ORDER BY NVL(a.SALES, 0), ns.NIP) AS LINIA_DOM
+    FROM   nip_sap ns
+    LEFT JOIN aktywni a ON a.NIP = ns.NIP
+    GROUP  BY ns.TOP_LEVEL
+),
+grupa AS (
+    SELECT d.TOP_LEVEL,
+           CASE WHEN NVL(l.LINIA_LIDERA, 'BRAK') = 'BRAK' THEN d.LINIA_DOM
+                ELSE l.LINIA_LIDERA END                                     AS LINIA
+    FROM   dominujaca d
+    LEFT JOIN lider l ON l.TOP_LEVEL = d.TOP_LEVEL
+),
+db AS (
+    SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                              AS NIP,
+           MAX(d.ZATRUDNIENIE)                                              AS ZATR
+    FROM   WORK_POLAND.DB_BAZA d
+    WHERE  d.ZATRUDNIENIE IS NOT NULL
+    GROUP  BY REGEXP_REPLACE(d.NIP, '[^0-9]', '')
+),
+kpp AS (
+    SELECT LPAD(TO_CHAR(NIP), 10, '0')                                      AS NIP,
+           MAX(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'))                         AS DZIAL_KPP
+    FROM   WORK_POLAND.T_KATALOG_PODMIOTOW_PUBLICZNYCH
+    WHERE  NIP IS NOT NULL AND KATEGORIA_PODMIOTU = 'PUBLIC' AND NVL(STATUS, 'ACTIVE') = 'ACTIVE'
+    GROUP  BY LPAD(TO_CHAR(NIP), 10, '0')
+),
+wszystkie AS (                                  -- SAP (z grupa) + niezarejestrowani z DB_BAZA
+    SELECT ns.NIP, ns.TOP_LEVEL, g.LINIA AS LINIA_GRUPY
+    FROM   nip_sap ns
+    JOIN   grupa g ON g.TOP_LEVEL = ns.TOP_LEVEL
+    UNION ALL
+    SELECT db.NIP, NULL, NULL
+    FROM   db
+    WHERE  NOT EXISTS (SELECT 1 FROM nip_sap ns WHERE ns.NIP = db.NIP)
+),
+n AS (
+    SELECT w.NIP, w.TOP_LEVEL, w.LINIA_GRUPY, db.ZATR,
+           NVL(a.SALES, 0)                                                  AS SALES,
+           CASE
+               WHEN (kpp.NIP IS NOT NULL
+                     OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
+                AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP)
+                    IN ('84','85','86','87','88','90','91','92','93')       THEN 'PUBLIC'
+               WHEN db.ZATR IS NULL                                         THEN 'BRAK'
+               WHEN db.ZATR < 10                                            THEN '0-9'
+               WHEN db.ZATR < 50                                            THEN '10-49'
+               WHEN db.ZATR < 250                                           THEN '50-249'
+               WHEN db.ZATR < 1000                                          THEN '250-999'
+               ELSE                                                              '1000+'
+           END                                                              AS KLASA
+    FROM   wszystkie w
+    LEFT JOIN db               ON db.NIP  = w.NIP
+    LEFT JOIN aktywni a        ON a.NIP   = w.NIP
+    LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP = w.NIP
+    LEFT JOIN kpp              ON kpp.NIP = w.NIP
+)
+,
+pasmo_nip AS (                                  -- przedzial matrycy NIP-u (rynek)
+    SELECT n.*,
+           CASE WHEN n.ZATR IS NULL  THEN NULL
+                WHEN n.ZATR <= 40    THEN '1 1-40'
+                WHEN n.ZATR <= 200   THEN '2 41-200'
+                WHEN n.ZATR <= 500   THEN '3 201-500'
+                WHEN n.ZATR <= 4000  THEN '4 501-4000'
+                ELSE                      '5 4001+' END                     AS PASMO
+    FROM   n
+)
+SELECT CASE WHEN n.LINIA_GRUPY IS NULL THEN 'NIEZAREJESTROWANY'
+            ELSE n.LINIA_GRUPY END                                          AS STATUS,
+       n.NIP,
+       cg.NAZWA                                                             AS NAZWA_CEIDG,
+       n.KLASA                                                              AS KLASA_GUS,
+       n.ZATR                                                               AS ZATR_DB,
+       n.TOP_LEVEL,
+       acc.NAME                                                             AS NAZWA_TOP_LEVEL,
+       ROUND(n.SALES)                                                       AS SPRZEDAZ_12M
+FROM   n
+LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP = n.NIP
+LEFT JOIN POLAND.T_ACCOUNT acc
+       ON  acc.ACCOUNT_NUMBER = n.TOP_LEVEL
+       AND acc.COUNTRY_CODE   = 'PL'
+WHERE  n.ZATR > 4000
+  AND  (n.LINIA_GRUPY IS NULL OR n.LINIA_GRUPY = 'KWARANTANNA')
+ORDER  BY n.ZATR DESC;
