@@ -2920,7 +2920,7 @@ WHERE  b.LINIA_DOC = 'STRATEGIC'
 ORDER  BY b.SALES_G DESC NULLS LAST;
 
 
--- === D35 Lista klientow K&N (grupy TOP_LEVEL wg D33, 1167 grup) - nazwa lidera, zatrudnienie, sprzedaz
+-- === D35 Lista klientow KN (grupy TOP_LEVEL wg D33, 1167 grup) - nazwa lidera, zatrudnienie, sprzedaz
 WITH linie AS (
     SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
            til.SOLDTO_NUMBER,
