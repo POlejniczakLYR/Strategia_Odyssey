@@ -300,3 +300,76 @@ body {
   text-align: left;
   color: var(--muted);
 }
+
+
+/* slajd: piramida biznes linii */
+.pir-wrap {
+  display: grid;
+  grid-template-columns: 780px 910px;
+  column-gap: 38px;
+  align-items: start;
+}
+
+.pir-lewa {
+  padding-top: 62px;
+}
+
+.pir-svg {
+  display: block;
+}
+
+.pir-tab {
+  display: grid;
+  grid-template-columns: 300px 120px 150px 120px 120px 100px;
+  grid-template-rows: 62px repeat(7, 80px) 60px;
+  column-gap: 0;
+  align-items: center;
+}
+
+.pir-tab .kol {
+  align-self: end;
+}
+
+.pt-l,
+.pt-n {
+  font-size: 24px;
+  color: var(--ink);
+  margin: 0;
+  border-bottom: 2px solid var(--rule);
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.pt-l {
+  column-gap: 10px;
+  white-space: nowrap;
+}
+
+.pt-n {
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+  padding-right: 4px;
+}
+
+.pt-b {
+  font-weight: 700;
+}
+
+.pt-pz {
+  color: var(--muted);
+  font-size: 22px;
+}
+
+.pt-chip {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  flex: none;
+}
+
+.pt-raz {
+  border-bottom: none;
+  border-top: 3px solid var(--ink);
+  font-weight: 700;
+}
