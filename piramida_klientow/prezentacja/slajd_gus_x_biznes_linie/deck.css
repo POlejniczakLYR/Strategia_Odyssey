@@ -243,7 +243,7 @@ body {
 .grupy3,
 .siatka3 {
   display: grid;
-  grid-template-columns: 290px 160px 150px 190px 190px 180px 170px 150px 150px;
+  grid-template-columns: 250px 190px 160px 140px 190px 200px 170px 170px 150px;
   column-gap: 3px;
 }
 
@@ -255,9 +255,9 @@ body {
   margin: 0 0 4px;
 }
 
-.g3-f { grid-column: 2 / 4; }
-.g3-p { grid-column: 4 / 6; }
-.g3-r { grid-column: 6 / 10; }
+.g3-f { grid-column: 3 / 5; }
+.g3-p { grid-column: 5 / 7; }
+.g3-r { grid-column: 7 / 10; }
 
 .siatka3 .wiersz,
 .siatka3 .gus,
@@ -294,4 +294,9 @@ body {
 
 .siatka3 .razem {
   font-weight: 700;
+}
+
+.pz {
+  text-align: left;
+  color: var(--muted);
 }
