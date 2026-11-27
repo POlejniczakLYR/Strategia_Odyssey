@@ -2521,6 +2521,7 @@ ORDER  BY 1, 2, 3;
 
 -- === D33 Jak D32 czesc B (linie), poprawki 2026-11-27:
 --   PUBLIC = sektor publiczny 501+ (bez gornej granicy);
+--   NIP z kilkoma platnikami / SOLDTO liczony raz, w grupie SOLDTO z biznes linii (np. Nowy Styl);
 --   Kwarantanna zostaje Kwarantanna (traktowana jak niezarejestrowani), przenosimy tylko
 --   Other SMB, Other CA i grupy bez regionu - i tylko do IS / FS / MM / PUBLIC;
 --   grupy 501+ spoza sektora publicznego zostaja w Inne (nie ida do KN ani Strategic).
@@ -2566,12 +2567,6 @@ soldto_all AS (
     WHERE  LENGTH(NIP) = 10
     GROUP  BY NIP, SOLDTO_NUMBER
 ),
-glowny AS (
-    SELECT NIP,
-           MAX(SOLDTO_NUMBER) KEEP (DENSE_RANK LAST ORDER BY SALES NULLS FIRST, SOLDTO_NUMBER) AS SOLDTO_GLOWNY
-    FROM   soldto_all
-    GROUP  BY NIP
-),
 region_bl AS (
     SELECT sfr.SALES_FORCE_REGION_CODE,
            CASE
@@ -2593,16 +2588,25 @@ region_bl AS (
     WHERE  sfr.COUNTRY_CODE  = 'PL'
       AND  sfr.LANGUAGE_CODE = 'POLISH'
 ),
-nip_sap AS (                                    -- kazdy NIP z SAP: grupa i linia wlasna
-    SELECT g.NIP,
-           COALESCE(ts.NATIONAL_LEADER_NUMBER, g.SOLDTO_GLOWNY)             AS TOP_LEVEL,
-           NVL(rb.LINIA, 'BRAK')                                            AS LINIA_NIP
-    FROM   glowny g
+nip_sap AS (                                    -- NIP -> jedna grupa (kilku platnikow z tym samym NIP
+                                                --   liczymy raz): pierwszenstwo ma SOLDTO w biznes linii,
+                                                --   potem SOLDTO w grupie (lider), potem sprzedaz
+    SELECT sa.NIP,
+           MAX(COALESCE(ts.NATIONAL_LEADER_NUMBER, sa.SOLDTO_NUMBER)) KEEP (DENSE_RANK LAST ORDER BY
+               CASE WHEN NVL(rb.LINIA, 'BRAK') IN ('INNE_SMB', 'INNE_CA', 'KWARANTANNA', 'BRAK') THEN 0 ELSE 1 END,
+               CASE WHEN ts.NATIONAL_LEADER_NUMBER IS NOT NULL THEN 1 ELSE 0 END,
+               sa.SALES NULLS FIRST, sa.SOLDTO_NUMBER)                      AS TOP_LEVEL,
+           MAX(NVL(rb.LINIA, 'BRAK')) KEEP (DENSE_RANK LAST ORDER BY
+               CASE WHEN NVL(rb.LINIA, 'BRAK') IN ('INNE_SMB', 'INNE_CA', 'KWARANTANNA', 'BRAK') THEN 0 ELSE 1 END,
+               CASE WHEN ts.NATIONAL_LEADER_NUMBER IS NOT NULL THEN 1 ELSE 0 END,
+               sa.SALES NULLS FIRST, sa.SOLDTO_NUMBER)                      AS LINIA_NIP
+    FROM   soldto_all sa
     LEFT JOIN POLAND.T_SOLDTO ts
-           ON  ts.SOLDTO_NUMBER = g.SOLDTO_GLOWNY
+           ON  ts.SOLDTO_NUMBER = sa.SOLDTO_NUMBER
            AND ts.COUNTRY_CODE  = 'PL'
     LEFT JOIN region_bl rb
            ON  rb.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+    GROUP  BY sa.NIP
 ),
 lider AS (                                      -- linia SOLDTO lidera grupy
     SELECT t.TOP_LEVEL,
@@ -2762,12 +2766,6 @@ soldto_all AS (
     WHERE  LENGTH(NIP) = 10
     GROUP  BY NIP, SOLDTO_NUMBER
 ),
-glowny AS (
-    SELECT NIP,
-           MAX(SOLDTO_NUMBER) KEEP (DENSE_RANK LAST ORDER BY SALES NULLS FIRST, SOLDTO_NUMBER) AS SOLDTO_GLOWNY
-    FROM   soldto_all
-    GROUP  BY NIP
-),
 region_bl AS (
     SELECT sfr.SALES_FORCE_REGION_CODE,
            CASE
@@ -2789,16 +2787,25 @@ region_bl AS (
     WHERE  sfr.COUNTRY_CODE  = 'PL'
       AND  sfr.LANGUAGE_CODE = 'POLISH'
 ),
-nip_sap AS (                                    -- kazdy NIP z SAP: grupa i linia wlasna
-    SELECT g.NIP,
-           COALESCE(ts.NATIONAL_LEADER_NUMBER, g.SOLDTO_GLOWNY)             AS TOP_LEVEL,
-           NVL(rb.LINIA, 'BRAK')                                            AS LINIA_NIP
-    FROM   glowny g
+nip_sap AS (                                    -- NIP -> jedna grupa (kilku platnikow z tym samym NIP
+                                                --   liczymy raz): pierwszenstwo ma SOLDTO w biznes linii,
+                                                --   potem SOLDTO w grupie (lider), potem sprzedaz
+    SELECT sa.NIP,
+           MAX(COALESCE(ts.NATIONAL_LEADER_NUMBER, sa.SOLDTO_NUMBER)) KEEP (DENSE_RANK LAST ORDER BY
+               CASE WHEN NVL(rb.LINIA, 'BRAK') IN ('INNE_SMB', 'INNE_CA', 'KWARANTANNA', 'BRAK') THEN 0 ELSE 1 END,
+               CASE WHEN ts.NATIONAL_LEADER_NUMBER IS NOT NULL THEN 1 ELSE 0 END,
+               sa.SALES NULLS FIRST, sa.SOLDTO_NUMBER)                      AS TOP_LEVEL,
+           MAX(NVL(rb.LINIA, 'BRAK')) KEEP (DENSE_RANK LAST ORDER BY
+               CASE WHEN NVL(rb.LINIA, 'BRAK') IN ('INNE_SMB', 'INNE_CA', 'KWARANTANNA', 'BRAK') THEN 0 ELSE 1 END,
+               CASE WHEN ts.NATIONAL_LEADER_NUMBER IS NOT NULL THEN 1 ELSE 0 END,
+               sa.SALES NULLS FIRST, sa.SOLDTO_NUMBER)                      AS LINIA_NIP
+    FROM   soldto_all sa
     LEFT JOIN POLAND.T_SOLDTO ts
-           ON  ts.SOLDTO_NUMBER = g.SOLDTO_GLOWNY
+           ON  ts.SOLDTO_NUMBER = sa.SOLDTO_NUMBER
            AND ts.COUNTRY_CODE  = 'PL'
     LEFT JOIN region_bl rb
            ON  rb.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+    GROUP  BY sa.NIP
 ),
 lider AS (                                      -- linia SOLDTO lidera grupy
     SELECT t.TOP_LEVEL,
@@ -2962,12 +2969,6 @@ soldto_all AS (
     WHERE  LENGTH(NIP) = 10
     GROUP  BY NIP, SOLDTO_NUMBER
 ),
-glowny AS (
-    SELECT NIP,
-           MAX(SOLDTO_NUMBER) KEEP (DENSE_RANK LAST ORDER BY SALES NULLS FIRST, SOLDTO_NUMBER) AS SOLDTO_GLOWNY
-    FROM   soldto_all
-    GROUP  BY NIP
-),
 region_bl AS (
     SELECT sfr.SALES_FORCE_REGION_CODE,
            CASE
@@ -2989,16 +2990,25 @@ region_bl AS (
     WHERE  sfr.COUNTRY_CODE  = 'PL'
       AND  sfr.LANGUAGE_CODE = 'POLISH'
 ),
-nip_sap AS (                                    -- kazdy NIP z SAP: grupa i linia wlasna
-    SELECT g.NIP,
-           COALESCE(ts.NATIONAL_LEADER_NUMBER, g.SOLDTO_GLOWNY)             AS TOP_LEVEL,
-           NVL(rb.LINIA, 'BRAK')                                            AS LINIA_NIP
-    FROM   glowny g
+nip_sap AS (                                    -- NIP -> jedna grupa (kilku platnikow z tym samym NIP
+                                                --   liczymy raz): pierwszenstwo ma SOLDTO w biznes linii,
+                                                --   potem SOLDTO w grupie (lider), potem sprzedaz
+    SELECT sa.NIP,
+           MAX(COALESCE(ts.NATIONAL_LEADER_NUMBER, sa.SOLDTO_NUMBER)) KEEP (DENSE_RANK LAST ORDER BY
+               CASE WHEN NVL(rb.LINIA, 'BRAK') IN ('INNE_SMB', 'INNE_CA', 'KWARANTANNA', 'BRAK') THEN 0 ELSE 1 END,
+               CASE WHEN ts.NATIONAL_LEADER_NUMBER IS NOT NULL THEN 1 ELSE 0 END,
+               sa.SALES NULLS FIRST, sa.SOLDTO_NUMBER)                      AS TOP_LEVEL,
+           MAX(NVL(rb.LINIA, 'BRAK')) KEEP (DENSE_RANK LAST ORDER BY
+               CASE WHEN NVL(rb.LINIA, 'BRAK') IN ('INNE_SMB', 'INNE_CA', 'KWARANTANNA', 'BRAK') THEN 0 ELSE 1 END,
+               CASE WHEN ts.NATIONAL_LEADER_NUMBER IS NOT NULL THEN 1 ELSE 0 END,
+               sa.SALES NULLS FIRST, sa.SOLDTO_NUMBER)                      AS LINIA_NIP
+    FROM   soldto_all sa
     LEFT JOIN POLAND.T_SOLDTO ts
-           ON  ts.SOLDTO_NUMBER = g.SOLDTO_GLOWNY
+           ON  ts.SOLDTO_NUMBER = sa.SOLDTO_NUMBER
            AND ts.COUNTRY_CODE  = 'PL'
     LEFT JOIN region_bl rb
            ON  rb.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+    GROUP  BY sa.NIP
 ),
 lider AS (                                      -- linia SOLDTO lidera grupy
     SELECT t.TOP_LEVEL,
@@ -3117,3 +3127,41 @@ LEFT JOIN POLAND.T_ACCOUNT acc
        AND acc.COUNTRY_CODE   = 'PL'
 WHERE  b.LINIA_DOC = 'KN'
 ORDER  BY b.SALES_G DESC NULLS LAST;
+
+
+-- === D36 NIP-y z kilkoma platnikami / SOLDTO w roznych grupach lub liniach (np. Nowy Styl)
+WITH konta AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
+           tp.PAYER_NUMBER,
+           ts.SOLDTO_NUMBER,
+           COALESCE(ts.NATIONAL_LEADER_NUMBER, ts.SOLDTO_NUMBER)            AS TOP_LEVEL,
+           sfr.SALES_FORCE_REGION                                           AS REGION
+    FROM   POLAND.T_SOLDTO ts
+    JOIN   POLAND.T_PAYER tp
+           ON  tp.PAYER_NUMBER = ts.PAYER_NUMBER
+           AND tp.COUNTRY_CODE = ts.COUNTRY_CODE
+    LEFT JOIN SHARED.T_SALES_FORCE_REGION sfr
+           ON  sfr.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+           AND sfr.COUNTRY_CODE            = 'PL'
+           AND sfr.LANGUAGE_CODE           = 'POLISH'
+    WHERE  ts.COUNTRY_CODE = 'PL'
+      AND  NVL(ts.DL_DELETION_FLAG, 'N') <> 'Y'
+),
+nip AS (
+    SELECT NIP,
+           COUNT(DISTINCT PAYER_NUMBER)                                     AS PLATNICY,
+           COUNT(DISTINCT TOP_LEVEL)                                        AS GRUPY,
+           COUNT(DISTINCT REGION)                                           AS REGIONY
+    FROM   konta
+    WHERE  LENGTH(NIP) = 10
+    GROUP  BY NIP
+)
+SELECT CASE WHEN PLATNICY > 1 THEN 'KILKU PLATNIKOW' ELSE 'JEDEN PLATNIK' END AS PLATNICY,
+       CASE WHEN GRUPY > 1 THEN 'ROZNE GRUPY' ELSE 'JEDNA GRUPA' END        AS GRUPY,
+       CASE WHEN REGIONY > 1 THEN 'ROZNE REGIONY' ELSE 'JEDEN REGION' END   AS REGIONY,
+       COUNT(*)                                                             AS NIP
+FROM   nip
+GROUP  BY CASE WHEN PLATNICY > 1 THEN 'KILKU PLATNIKOW' ELSE 'JEDEN PLATNIK' END,
+          CASE WHEN GRUPY > 1 THEN 'ROZNE GRUPY' ELSE 'JEDNA GRUPA' END,
+          CASE WHEN REGIONY > 1 THEN 'ROZNE REGIONY' ELSE 'JEDEN REGION' END
+ORDER  BY 1, 2, 3;
