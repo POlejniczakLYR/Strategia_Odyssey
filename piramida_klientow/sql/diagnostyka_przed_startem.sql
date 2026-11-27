@@ -3980,3 +3980,68 @@ LEFT JOIN POLAND.T_ACCOUNT acc
 WHERE  n.ZATR > 4000
   AND  (n.LINIA_GRUPY IS NULL OR n.LINIA_GRUPY = 'KWARANTANNA')
 ORDER  BY n.ZATR DESC;
+
+
+-- === D41 Rynek KN (501-4000, bez sektora publicznego): firmy z Kwarantanny i niezarejestrowane
+--         (wg NIP: brak SOLDTO w SAP albo wszystkie SOLDTO w Kwarantannie)
+WITH db AS (
+    SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                      AS NIP,
+           MAX(d.ZATRUDNIENIE)                                      AS ZATR
+    FROM   WORK_POLAND.DB_BAZA d
+    WHERE  d.ZATRUDNIENIE IS NOT NULL
+    GROUP  BY REGEXP_REPLACE(d.NIP, '[^0-9]', '')
+    HAVING MAX(d.ZATRUDNIENIE) > 500 AND MAX(d.ZATRUDNIENIE) <= 4000
+),
+kpp AS (
+    SELECT LPAD(TO_CHAR(NIP), 10, '0')                              AS NIP,
+           MAX(REGEXP_SUBSTR(KOD_PKD, '^[0-9]{2}'))                 AS DZIAL_KPP
+    FROM   WORK_POLAND.T_KATALOG_PODMIOTOW_PUBLICZNYCH
+    WHERE  NIP IS NOT NULL AND KATEGORIA_PODMIOTU = 'PUBLIC' AND NVL(STATUS, 'ACTIVE') = 'ACTIVE'
+    GROUP  BY LPAD(TO_CHAR(NIP), 10, '0')
+),
+sap AS (
+    SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')             AS NIP,
+           ts.SOLDTO_NUMBER,
+           COALESCE(ts.NATIONAL_LEADER_NUMBER, ts.SOLDTO_NUMBER)    AS TOP_LEVEL,
+           sfr.SALES_FORCE_REGION                                   AS REGION,
+           CASE WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%QUARANT%'
+                THEN 1 ELSE 0 END                                   AS KWARANTANNA
+    FROM   POLAND.T_SOLDTO ts
+    JOIN   POLAND.T_PAYER tp
+           ON  tp.PAYER_NUMBER = ts.PAYER_NUMBER
+           AND tp.COUNTRY_CODE = ts.COUNTRY_CODE
+    LEFT JOIN SHARED.T_SALES_FORCE_REGION sfr
+           ON  sfr.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
+           AND sfr.COUNTRY_CODE            = 'PL'
+           AND sfr.LANGUAGE_CODE           = 'POLISH'
+    WHERE  ts.COUNTRY_CODE = 'PL'
+      AND  NVL(ts.DL_DELETION_FLAG, 'N') <> 'Y'
+),
+f AS (
+    SELECT db.NIP, db.ZATR, cg.NAZWA, cg.PKD_KOD,
+           CASE WHEN (kpp.NIP IS NOT NULL
+                      OR REGEXP_LIKE(UPPER(cg.FORMA_WLASNOSCI), '^ *1[0-9]{2}|SKARBU PA.{1,2}STWA|PA.{1,2}STWOWYCH OS.{1,2}B PRAWNYCH|SAMORZ.{1,2}DU TERYTORIALNEGO|W SEKTORZE PUBLICZNYM|SEKTORAMI Z PRZEWAG.{1,2} W.{1,2}ASNO.{1,2}CI SEKTORA PUBLICZNEGO'))
+                 AND COALESCE(SUBSTR(REGEXP_REPLACE(cg.PKD_KOD, '[^0-9]', ''), 1, 2), kpp.DZIAL_KPP)
+                     IN ('84','85','86','87','88','90','91','92','93')
+                THEN 1 ELSE 0 END                                   AS FLAGA_PUBLIC
+    FROM   db
+    LEFT JOIN WORK_POLAND.T_CEIDG_GUS cg ON cg.NIP  = db.NIP
+    LEFT JOIN kpp                        ON kpp.NIP = db.NIP
+)
+SELECT f.NIP,
+       f.NAZWA                                                      AS NAZWA_CEIDG,
+       f.ZATR,
+       f.PKD_KOD,
+       CASE WHEN COUNT(s.SOLDTO_NUMBER) = 0 THEN 'NIEZAREJESTROWANY'
+            ELSE 'KWARANTANNA' END                                  AS STATUS,
+       COUNT(s.SOLDTO_NUMBER)                                       AS SOLDTO,
+       MIN(s.SOLDTO_NUMBER)                                         AS PRZYKLADOWE_SOLDTO,
+       MIN(s.TOP_LEVEL)                                             AS TOP_LEVEL,
+       MIN(s.REGION)                                                AS REGION
+FROM   f
+LEFT JOIN sap s ON s.NIP = f.NIP
+WHERE  f.FLAGA_PUBLIC = 0
+GROUP  BY f.NIP, f.NAZWA, f.ZATR, f.PKD_KOD
+HAVING COUNT(s.SOLDTO_NUMBER) = 0
+    OR MIN(s.KWARANTANNA) = 1
+ORDER  BY 5, f.ZATR DESC;
