@@ -2523,7 +2523,7 @@ ORDER  BY 1, 2, 3;
 --   PUBLIC = sektor publiczny 501+ (bez gornej granicy);
 --   Kwarantanna zostaje Kwarantanna (traktowana jak niezarejestrowani), przenosimy tylko
 --   Other SMB, Other CA i grupy bez regionu - i tylko do IS / FS / MM / PUBLIC;
---   grupy 501+ spoza sektora publicznego zostaja w Inne (nie ida do K&N ani Strategic).
+--   grupy 501+ spoza sektora publicznego zostaja w Inne (nie ida do KN ani Strategic).
 WITH linie AS (
     SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
            til.SOLDTO_NUMBER,
