@@ -3983,7 +3983,8 @@ ORDER  BY n.ZATR DESC;
 
 
 -- === D41 Rynek KN (501-4000, bez sektora publicznego): firmy z Kwarantanny i niezarejestrowane
---         (wg NIP: brak SOLDTO w SAP albo wszystkie SOLDTO w Kwarantannie)
+--         (wg NIP: brak SOLDTO w SAP albo wszystkie SOLDTO i ich liderzy grup w Kwarantannie;
+--          NIP w Kwarantannie, ale w grupie lidera z innego regionu = klient tej grupy, pomijamy)
 WITH db AS (
     SELECT REGEXP_REPLACE(d.NIP, '[^0-9]', '')                      AS NIP,
            MAX(d.ZATRUDNIENIE)                                      AS ZATR
@@ -4004,8 +4005,10 @@ sap AS (
            ts.SOLDTO_NUMBER,
            COALESCE(ts.NATIONAL_LEADER_NUMBER, ts.SOLDTO_NUMBER)    AS TOP_LEVEL,
            sfr.SALES_FORCE_REGION                                   AS REGION,
+           sfl.SALES_FORCE_REGION                                   AS REGION_LIDERA,
            CASE WHEN UPPER(sfr.SALES_FORCE_REGION) LIKE '%QUARANT%'
-                THEN 1 ELSE 0 END                                   AS KWARANTANNA
+                 AND UPPER(NVL(sfl.SALES_FORCE_REGION, sfr.SALES_FORCE_REGION)) LIKE '%QUARANT%'
+                THEN 1 ELSE 0 END                                   AS KWARANTANNA    -- SOLDTO i lider grupy w Kwarantannie
     FROM   POLAND.T_SOLDTO ts
     JOIN   POLAND.T_PAYER tp
            ON  tp.PAYER_NUMBER = ts.PAYER_NUMBER
@@ -4014,6 +4017,13 @@ sap AS (
            ON  sfr.SALES_FORCE_REGION_CODE = ts.SALES_FORCE_REGION_CODE
            AND sfr.COUNTRY_CODE            = 'PL'
            AND sfr.LANGUAGE_CODE           = 'POLISH'
+    LEFT JOIN POLAND.T_SOLDTO tl                                       -- SOLDTO lidera grupy
+           ON  tl.SOLDTO_NUMBER = COALESCE(ts.NATIONAL_LEADER_NUMBER, ts.SOLDTO_NUMBER)
+           AND tl.COUNTRY_CODE  = 'PL'
+    LEFT JOIN SHARED.T_SALES_FORCE_REGION sfl
+           ON  sfl.SALES_FORCE_REGION_CODE = tl.SALES_FORCE_REGION_CODE
+           AND sfl.COUNTRY_CODE            = 'PL'
+           AND sfl.LANGUAGE_CODE           = 'POLISH'
     WHERE  ts.COUNTRY_CODE = 'PL'
       AND  NVL(ts.DL_DELETION_FLAG, 'N') <> 'Y'
 ),
@@ -4037,7 +4047,8 @@ SELECT f.NIP,
        COUNT(s.SOLDTO_NUMBER)                                       AS SOLDTO,
        MIN(s.SOLDTO_NUMBER)                                         AS PRZYKLADOWE_SOLDTO,
        MIN(s.TOP_LEVEL)                                             AS TOP_LEVEL,
-       MIN(s.REGION)                                                AS REGION
+       MIN(s.REGION)                                                AS REGION,
+       MIN(s.REGION_LIDERA)                                         AS REGION_LIDERA
 FROM   f
 LEFT JOIN sap s ON s.NIP = f.NIP
 WHERE  f.FLAGA_PUBLIC = 0
