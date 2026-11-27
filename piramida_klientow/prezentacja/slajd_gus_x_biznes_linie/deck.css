@@ -238,3 +238,60 @@ body {
 .u2 { background: var(--h2); border-radius: 4px; }
 .u3 { background: var(--h3); border-radius: 4px; }
 .u4 { background: var(--h4); color: var(--on-dark); border-radius: 4px; }
+
+/* slajd 3: biznes linie - klienci TOP_LEVEL, pracownicy, potencjal, udzial */
+.grupy3,
+.siatka3 {
+  display: grid;
+  grid-template-columns: 290px 160px 150px 190px 190px 180px 170px 150px 150px;
+  column-gap: 3px;
+}
+
+.siatka3 {
+  row-gap: 2px;
+}
+
+.grupy3 {
+  margin: 0 0 4px;
+}
+
+.g3-f { grid-column: 2 / 4; }
+.g3-p { grid-column: 4 / 6; }
+.g3-r { grid-column: 6 / 10; }
+
+.siatka3 .wiersz,
+.siatka3 .gus,
+.siatka3 .suma {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.c3 {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding: 4px 10px 4px 2px;
+  border-radius: 4px;
+  margin: 0;
+  color: var(--ink);
+}
+
+.c3.h4,
+.c3.h5 {
+  color: var(--on-dark);
+}
+
+.sub {
+  border-top: 2px solid var(--rule);
+  border-bottom: 2px solid var(--rule);
+  font-weight: 700;
+}
+
+.p3 {
+  margin-top: 16px;
+}
+
+.siatka3 .razem {
+  font-weight: 700;
+}
