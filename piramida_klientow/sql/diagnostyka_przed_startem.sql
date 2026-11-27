@@ -2522,7 +2522,8 @@ ORDER  BY 1, 2, 3;
 -- === D33 Jak D32 czesc B (linie), poprawki 2026-11-27:
 --   PUBLIC = sektor publiczny 501+ (bez gornej granicy);
 --   Kwarantanna zostaje Kwarantanna (traktowana jak niezarejestrowani), przenosimy tylko
---   Other SMB, Other CA i grupy bez regionu.
+--   Other SMB, Other CA i grupy bez regionu - i tylko do IS / FS / MM / PUBLIC;
+--   grupy 501+ spoza sektora publicznego zostaja w Inne (nie ida do K&N ani Strategic).
 WITH linie AS (
     SELECT REGEXP_REPLACE(tp.TAX_NUMBER1, '[^0-9]', '')                     AS NIP,
            til.SOLDTO_NUMBER,
@@ -2701,8 +2702,7 @@ grp_bl AS (
                 WHEN g.ZATR_G <= 200         THEN 'FS'
                 WHEN g.ZATR_G <= 500         THEN 'MM'
                 WHEN g.KLASA_NAJW = 'PUBLIC' THEN 'PUBLIC'
-                WHEN g.ZATR_G <= 4000        THEN 'KN'
-                ELSE                              'STRATEGIC' END           AS LINIA_DOC
+                ELSE                              g.LINIA_GRUPY END         AS LINIA_DOC  -- 501+ zostaje w Inne (2026-11-27)
     FROM   grp g
 )
 SELECT b.LINIA_DOC                                                         AS LINIA,
@@ -2891,8 +2891,7 @@ grp_bl AS (
                 WHEN g.ZATR_G <= 200         THEN 'FS'
                 WHEN g.ZATR_G <= 500         THEN 'MM'
                 WHEN g.KLASA_NAJW = 'PUBLIC' THEN 'PUBLIC'
-                WHEN g.ZATR_G <= 4000        THEN 'KN'
-                ELSE                              'STRATEGIC' END           AS LINIA_DOC
+                ELSE                              g.LINIA_GRUPY END         AS LINIA_DOC  -- 501+ zostaje w Inne (2026-11-27)
     FROM   grp g
 )
 SELECT b.TOP_LEVEL,
@@ -3092,8 +3091,7 @@ grp_bl AS (
                 WHEN g.ZATR_G <= 200         THEN 'FS'
                 WHEN g.ZATR_G <= 500         THEN 'MM'
                 WHEN g.KLASA_NAJW = 'PUBLIC' THEN 'PUBLIC'
-                WHEN g.ZATR_G <= 4000        THEN 'KN'
-                ELSE                              'STRATEGIC' END           AS LINIA_DOC
+                ELSE                              g.LINIA_GRUPY END         AS LINIA_DOC  -- 501+ zostaje w Inne (2026-11-27)
     FROM   grp g
 )
 SELECT b.TOP_LEVEL,
